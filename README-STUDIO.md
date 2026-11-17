@@ -39,6 +39,7 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 
 ## 来源
 
+- 本项目是 EricaNoir 维护的独立衍生改版，fork 来源为 **zhimingshenjun** 的 [DD_Monitor](https://github.com/zhimingshenjun/DD_Monitor)，并非原作者的官方发布。
 - 基于 [DD_Monitor_latest](https://gitee.com/zhimingshenjun/DD_Monitor_latest) 的 `47da26d`。该提交虽然有 `DD_Monitor2.17` 标签，但源代码版本号为 2.16，并非保证与发布的 2.17 exe 完全一致。
 - 原项目 LGPL 2.1 许可证保留于 `LICENSE`。
 - 更新了 [xfgryujk/blivedm](https://github.com/xfgryujk/blivedm/tree/3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6) 的 `clients/web.py` 与 `utils.py`，采用其 WBI 签名和当前房间接口。MIT 归属与许可证保留在 `blivedm/LICENSE`。
