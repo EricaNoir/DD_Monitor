@@ -3,10 +3,11 @@ import hashlib
 import json
 from collections import deque
 from pathlib import Path
-from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData
+from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData, QEvent, QPointF
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPixmap, QDrag, QPen, QIcon
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PySide6.QtWidgets import QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView
+from PySide6.QtWidgets import QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip
+from .icons import icon
 from .runtime import configure_qt_tls
 from .services import safe_image
 
@@ -99,7 +100,7 @@ class RoomDelegate(QStyledItemDelegate):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor('#393939' if current or selected else '#292929'))
             painter.drawRoundedRect(area, 7, 7)
-        avatar = QRectF(option.rect.left() + 10, option.rect.top() + 8, 28, 28)
+        avatar = QRectF(option.rect.left() + 7, option.rect.top() + 8, 26, 26)
         clip = QPainterPath()
         clip.addEllipse(avatar)
         painter.save()
@@ -126,7 +127,7 @@ class RoomDelegate(QStyledItemDelegate):
         painter.restore()
 
     def sizeHint(self, option, index):
-        return QSize(48, 44)
+        return QSize(38, 42)
 
 
 class RoomList(QListWidget):
@@ -139,7 +140,7 @@ class RoomList(QListWidget):
         self.setDragEnabled(True)
         self.setMouseTracking(True)
         self.setSpacing(0)
-        self.setMinimumWidth(48)
+        self.setMinimumWidth(38)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         avatars.changed.connect(self.viewport().update)
@@ -156,3 +157,75 @@ class RoomList(QListWidget):
             drag = QDrag(self)
             drag.setMimeData(mime)
             drag.exec(Qt.CopyAction)
+
+
+class SearchResultDelegate(QStyledItemDelegate):
+    favorite_clicked = Signal(str)
+
+    def favorite_rect(self, rect):
+        return QRectF(rect.right()-39, rect.center().y()-15, 30, 30)
+
+    def paint(self, painter, option, index):
+        room = index.data(Qt.UserRole) or {}
+        checked = index.data(Qt.CheckStateRole) in (Qt.Checked, Qt.Checked.value)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = option.rect
+        if checked or option.state & QStyle.State_MouseOver:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor('#343434' if checked else '#292929'))
+            painter.drawRoundedRect(QRectF(rect).adjusted(1,2,-1,-2),6,6)
+        check = QRectF(rect.left()+8, rect.center().y()-7,14,14)
+        painter.setPen(QPen(QColor('#777777'),1))
+        painter.setBrush(QColor('#dddddd' if checked else '#262626'))
+        painter.drawRoundedRect(check,3,3)
+        if checked:
+            painter.setPen(QPen(QColor('#222222'),1.6))
+            painter.drawLine(QPointF(check.x()+3,check.y()+7),QPointF(check.x()+6,check.y()+10))
+            painter.drawLine(QPointF(check.x()+6,check.y()+10),QPointF(check.x()+11,check.y()+4))
+        avatar=QRectF(rect.left()+34,rect.top()+14,40,40)
+        clip=QPainterPath();clip.addEllipse(avatar)
+        painter.save();painter.setClipPath(clip)
+        pixmap=self.parent().avatars.get(room.get('face',''))
+        if pixmap is not None:
+            side=min(pixmap.width(),pixmap.height())
+            painter.drawPixmap(avatar,pixmap,QRectF((pixmap.width()-side)/2,(pixmap.height()-side)/2,side,side))
+        else:
+            painter.fillRect(avatar,QColor('#484848'))
+            painter.setPen(QColor('#dddddd'))
+            painter.drawText(avatar,Qt.AlignCenter,room.get('name','?')[:1])
+        painter.restore()
+        x=rect.left()+88
+        width=max(10,rect.right()-x-48)
+        painter.setPen(QColor('#eeeeee'))
+        title=room.get('name','') + ('  ·  直播中' if room.get('live') else '  ·  未开播')
+        painter.drawText(QRectF(x,rect.top()+10,width,24),Qt.AlignVCenter,
+                         option.fontMetrics.elidedText(title,Qt.ElideRight,width))
+        status='已关注' if room.get('following') is True else ('未关注' if room.get('following') is False else '关注状态未知')
+        subtitle=f'{status}  ·  {room.get("id", "")}  ·  {room.get("title", "")}'
+        painter.setPen(QColor('#9c9c9c'))
+        painter.drawText(QRectF(x,rect.top()+35,width,24),Qt.AlignVCenter,
+                         option.fontMetrics.elidedText(subtitle,Qt.ElideRight,width))
+        favorite = bool(index.data(Qt.UserRole+1))
+        icon('star_filled' if favorite else 'star').paint(painter, self.favorite_rect(rect).adjusted(5,5,-5,-5).toRect())
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index):
+        clicked=event.type()==QEvent.MouseButtonRelease and event.button()==Qt.LeftButton
+        pressed=event.type()==QEvent.KeyPress and event.key()==Qt.Key_Space
+        if clicked and self.favorite_rect(option.rect).contains(event.position()):
+            self.favorite_clicked.emit(index.data(Qt.UserRole)['id'])
+            return True
+        if clicked or pressed:
+            value=Qt.Unchecked if index.data(Qt.CheckStateRole) in (Qt.Checked, Qt.Checked.value) else Qt.Checked
+            return model.setData(index,value,Qt.CheckStateRole)
+        return False
+
+    def helpEvent(self, event, view, option, index):
+        if self.favorite_rect(option.rect).contains(event.pos()):
+            QToolTip.showText(event.globalPos(), '取消收藏' if index.data(Qt.UserRole+1) else '收藏到左侧边栏', view)
+            return True
+        return super().helpEvent(event, view, option, index)
+
+    def sizeHint(self, option, index):
+        return QSize(0,70)

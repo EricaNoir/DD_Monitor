@@ -3,13 +3,15 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from types import SimpleNamespace
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint, QMimeData
+from PySide6.QtTest import QTest
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
-from studio.services import room_number, plain, safe_image, parse_chat
+from studio.services import room_number, plain, safe_image, parse_chat, BiliAPI
 from studio.chat import message_html
 from studio.state import load_state, save_json
 from studio.app import StudioWindow, SearchDialog
@@ -41,6 +43,28 @@ class DataTests(unittest.TestCase):
         message = parse_chat({'cmd': 'DANMU_MSG:4:0:2', 'info': info})
         self.assertEqual((message['name'], message['uid'], message['level']), ('昵称', '123', '21'))
         self.assertIsNone(parse_chat({'cmd': 'SEND_GIFT'}))
+
+    def test_follow_state_distinguishes_unknown_from_not_following(self):
+        rooms = [{'id': str(i), 'uid': i} for i in (1,2,3)]
+        api = BiliAPI()
+        with patch.object(api, 'get') as get:
+            result = api.with_follow_state({'rooms': rooms, 'more': False})
+            get.assert_not_called()
+            self.assertEqual(result['follow_state'], 'login_required')
+            self.assertTrue(all(r['following'] is None for r in rooms))
+        api = BiliAPI({'SESSDATA': 'test-only'})
+        with patch.object(api, 'get', side_effect=[{'isLogin': True}, {'1': {'attribute': 6}, '2': {'attribute': 0}}]):
+            result = api.with_follow_state({'rooms': rooms, 'more': False})
+            self.assertEqual([r['following'] for r in rooms], [True, False, None])
+        with patch.object(api, 'get', side_effect=ValueError('unavailable')):
+            result = api.with_follow_state({'rooms': rooms, 'more': False})
+            self.assertEqual(result['follow_state'], 'unavailable')
+            self.assertTrue(all(r['following'] is None for r in rooms))
+
+    def test_medal_has_italic_color_without_background(self):
+        markup = message_html({'name':'观众','text':'消息','medal':'粉丝牌','level':'21'})
+        self.assertIn('font-style:italic', markup)
+        self.assertNotIn('background-color', markup)
 
 
 class UITests(unittest.TestCase):
@@ -125,6 +149,7 @@ class UITests(unittest.TestCase):
 
     def test_search_selection_and_stale_response(self):
         dialog = SearchDialog({}, 0, 4, self.window)
+        dialog.mode = 'search'
         dialog.ticket = 2
         room = {'id': '123', 'name': '匹配主播', 'title': '游戏', 'live': True}
         dialog.show_results(1, {'rooms': [room], 'more': False})
@@ -224,6 +249,7 @@ class UITests(unittest.TestCase):
         w = self.window
         room = {'id': '123', 'name': '测试主播', 'live': True, 'title': '直播标题'}
         w.rooms = {'123': room}
+        w.favorites = {'123'}
         w.tiles[1].room = room
         w.refresh_library()
         width = w.library.width()
@@ -263,12 +289,13 @@ class UITests(unittest.TestCase):
         w = self.window
         w.rooms = {str(i): {'id': str(i), 'name': name, 'title': '预览内容', 'live': i != 3}
                    for i, name in enumerate(['OA-LEAVE7', 'OA-Guxue8', 'OA-SHY', '收藏的直播间'], 1)}
+        w.favorites = set(w.rooms)
         w.refresh_library()
         for tile, room in zip(w.tiles, w.rooms.values()):
             tile.room = room
-            tile.name.setText(f'{tile.index + 1:02d}   {room["name"]}')
+            tile.update_title()
             tile.empty_title.setText('直播画面')
-            tile.empty_hint.setText('界面预览 · 实际运行时显示直播视频')
+            tile.empty_hint.setText('界面预览 · 示例聊天数据')
         for tile in w.tiles[:4]:
             tile.empty_add.hide()
             tile.chat_connection.setText('已连接')
@@ -285,6 +312,90 @@ class UITests(unittest.TestCase):
         w.chat_toggle.click()
         self.app.processEvents()
         self.assertTrue(w.grab().save(str(output / 'studio-chat-hidden.png')))
+
+    def test_click_fills_empty_and_full_grid_never_replaces_but_drag_can(self):
+        w = self.window
+        room = {'id':'88','name':'新增主播','title':'测试','uid':88}
+        w.rooms = {'88':room}
+        w.favorites = {'88'}
+        w.refresh_library()
+        for i,tile in enumerate(w.tiles[:4]):
+            tile.room = {'id':str(i),'name':str(i)}
+            tile.set_room = Mock()
+        w.tiles[2].room = None
+        w.activate_library(w.room_list.item(0))
+        w.tiles[2].set_room.assert_called_once_with(room)
+        w.tiles[2].set_room.reset_mock()
+        w.tiles[2].room = {'id':'2','name':'已有主播'}
+        w.activate_library(w.room_list.item(0))
+        self.assertTrue(all(t.set_room.call_count == 0 for t in w.tiles[:4]))
+        mime = QMimeData()
+        mime.setData('application/x-dd-room',json.dumps(room).encode())
+        event = SimpleNamespace(mimeData=lambda:mime,acceptProposedAction=Mock())
+        w.tiles[0].dropEvent(event)
+        w.tiles[0].set_room.assert_called_once_with(room)
+        self.assertNotIn('点击',w.room_list.item(0).toolTip())
+
+    def test_favorite_star_and_quick_selection_persist(self):
+        w = self.window
+        w.demo = False
+        w.cookies = {}
+        w.open_search(2)
+        dialog = w.dialogs[-1]
+        dialog.mode = 'search'
+        room = {'id':'99','name':'收藏测试','uid':99,'title':'标题','following':None}
+        dialog.show_results(dialog.ticket, {'rooms':[room],'more':False,'follow_state':'login_required'})
+        self.app.processEvents()
+        item = dialog.results.item(0)
+        star = dialog.result_delegate.favorite_rect(dialog.results.visualItemRect(item)).center().toPoint()
+        QTest.mouseClick(dialog.results.viewport(),Qt.LeftButton,pos=star)
+        self.assertIn('99',w.favorites)
+        self.assertEqual(item.checkState(),Qt.Unchecked)
+        self.assertEqual(w.room_list.count(),1)
+        self.assertEqual(load_state(self.path)['favorites'],['99'])
+        dialog.close()
+        w.open_search(1)
+        quick = w.dialogs[-1]
+        self.assertEqual(quick.mode,'favorites')
+        self.assertEqual(quick.results.item(0).data(Qt.UserRole)['id'],'99')
+        self.assertEqual(quick.target.currentData(),1)
+        quick.toggle_favorite('99')
+        self.assertNotIn('99',w.favorites)
+        self.assertEqual(w.room_list.count(),0)
+        quick.close()
+
+    def test_follow_filter_excludes_unknown_and_hidden_selections(self):
+        dialog = SearchDialog({},0,4,self.window)
+        dialog.mode = 'search'
+        rooms = [{'id':str(i),'name':str(i),'following':state} for i,state in enumerate((True,False,None))]
+        dialog.show_results(dialog.ticket,{'rooms':rooms,'more':True,'follow_state':'ok'})
+        dialog.results.item(0).setCheckState(Qt.Checked)
+        dialog.follow_filter.setCurrentIndex(2)
+        self.assertTrue(dialog.results.item(0).isHidden())
+        self.assertFalse(dialog.results.item(1).isHidden())
+        self.assertTrue(dialog.results.item(2).isHidden())
+        self.assertFalse(dialog.add_button.isEnabled())
+        dialog.close()
+
+    def test_top_icons_help_popup_title_and_dropdown_position(self):
+        w = self.window
+        self.assertLess(w.global_controls.mapToGlobal(QPoint()).y(),w.splitter.mapToGlobal(QPoint()).y())
+        self.assertLess(w.centralWidget().height()-w.splitter.geometry().bottom(),20)
+        for control in (w.pause_all,w.mute_all,w.reload_button,w.chat_toggle,w.info_button,w.tiles[0].play_button,w.tiles[0].remove):
+            self.assertTrue(control.text() == '' and not control.icon().isNull() and control.toolTip())
+        self.assertFalse(hasattr(w.tiles[0],'add_button'))
+        self.assertFalse(any('替换' in a.text() for a in w.tiles[0].more_menu.actions()))
+        w.tiles[0].room = {'id':'1','name':'主播昵称','title':'今晚的直播标题'}
+        w.tiles[0].update_title()
+        self.assertIn('主播昵称 · 今晚的直播标题',w.tiles[0].name.text())
+        w.show_help()
+        self.app.processEvents()
+        self.assertTrue(w.help_dialog.isVisible())
+        w.help_dialog.hide()
+        w.layout_choice.showPopup()
+        self.app.processEvents()
+        self.assertGreaterEqual(w.layout_choice.view().window().geometry().top(),w.layout_choice.mapToGlobal(QPoint(0,w.layout_choice.height())).y())
+        w.layout_choice.hidePopup()
 
 
 if __name__ == '__main__':

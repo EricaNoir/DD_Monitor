@@ -25,6 +25,8 @@ QFrame#VideoTile { background: #202020; border: 1px solid #3b3b3b; border-radius
 QFrame#VideoTile[active="true"] { border: 1px solid #777777; }
 QWidget#TileToolbar QPushButton { padding: 3px 6px; }
 QWidget#TileToolbar QComboBox { padding: 3px 6px; }
+QWidget#TileToolbar QPushButton[iconOnly="true"], QPushButton[iconOnly="true"] { padding: 0; }
+QDialog#HelpPopup { border: 1px solid #4a4a4a; }
 QPushButton#MoreControls { padding: 0; font-size: 18px; }
 QPushButton#MoreControls::menu-indicator { image: none; width: 0; }
 QMenu { background: #2a2a2a; color: #e6e6e6; border: 1px solid #4a4a4a; padding: 4px; }

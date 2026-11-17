@@ -19,7 +19,7 @@ def message_html(message, names=True):
         text = f'<img width="48" height="48" alt="{text}" src="{html.escape(emoji, quote=True)}">'
     medal = ''
     if names and message.get('medal'):
-        medal = f'<span style="color:#bcbcbc;background-color:#353535;"> {html.escape(message["medal"])} {html.escape(message.get("level", ""))} </span> '
+        medal = f'<span style="color:#bba5d2;font-style:italic;">{html.escape(message["medal"])} · {html.escape(message.get("level", ""))}</span>&nbsp;&nbsp;'
     sender = f'<span style="color:#a9a9a9;">{name}</span><span style="color:#888888;">：</span>' if names else ''
     return f'<p style="margin:6px 0;line-height:140%;">{medal}{sender}<span style="color:#dedede;">{text}</span></p>'
 

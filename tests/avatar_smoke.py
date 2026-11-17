@@ -25,12 +25,13 @@ window = StudioWindow(ROOT, demo=True)
 window.closed.connect(app.quit)
 window.avatars.enabled = True
 window.rooms = {r['id']: r for r in rooms}
+window.favorites = set(window.rooms)
 window.refresh_library()
 for tile, room in zip(window.tiles, rooms):
     tile.room = room
-    tile.name.setText(f'{tile.index + 1:02d}   {room["name"]}')
+    tile.update_title()
     tile.empty_title.setText('直播画面')
-    tile.empty_hint.setText('界面预览')
+    tile.empty_hint.setText('界面预览 · 示例聊天数据')
     tile.empty_add.hide()
     for i in range(9):
         tile.receive_chat(None, {'name': ['一只观众', '山间的风'][i % 2],
@@ -52,6 +53,11 @@ def finish():
     window.library_toggle.setChecked(False)
     app.processEvents()
     window.grab().save(str(output / 'avatar-sidebar-collapsed.png'))
+    window.open_search(0)
+    quick = window.dialogs[-1]
+    app.processEvents()
+    quick.grab().save(str(output / 'favorites-quick-select.png'))
+    quick.close()
     cached = AvatarStore(window.avatars.cache_dir, enabled=False)
     result['cached'] = sum(cached.get(r['face']) is not None for r in rooms)
     print('AVATARS', result, flush=True)

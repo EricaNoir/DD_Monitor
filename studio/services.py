@@ -86,6 +86,37 @@ class BiliAPI:
                 'title': info.get('title', ''), 'live': info.get('live_status') == 1,
                 'uid': info.get('uid', 0), 'face': safe_image(anchor.get('face', ''))}
 
+    def search_with_follow(self, query, page=1):
+        result = self.search(query, page)
+        return self.with_follow_state(result)
+
+    def with_follow_state(self, result):
+        for room in result['rooms']:
+            room['following'] = None
+        if not self.session.cookies.get_dict().get('SESSDATA'):
+            result['follow_state'] = 'login_required'
+            return result
+        try:
+            nav = self.get('https://api.bilibili.com/x/web-interface/nav')
+            if not nav.get('isLogin'):
+                result['follow_state'] = 'login_required'
+                return result
+            ids = [str(r['uid']) for r in result['rooms'] if r.get('uid')]
+            relations = {}
+            for start in range(0, len(ids), 50):
+                batch = self.get('https://api.bilibili.com/x/relation/relations', fids=','.join(ids[start:start+50]))
+                if not isinstance(batch, dict):
+                    raise ValueError('Invalid relation response')
+                relations.update(batch)
+            for room in result['rooms']:
+                relation = relations.get(str(room.get('uid')))
+                if isinstance(relation, dict) and isinstance(relation.get('attribute'), int):
+                    room['following'] = bool(relation['attribute'] & 3)
+            result['follow_state'] = 'ok'
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            result['follow_state'] = 'unavailable'
+        return result
+
     def stream(self, rid, quality=400):
         room = self.room(rid)
         if not room['live']:
