@@ -249,7 +249,7 @@ class StudioWindow(QMainWindow):
         self.closing = False
         self.ready = False
         self.setWindowTitle('DD Monitor Studio · 多屏直播工作台')
-        self.resize(1580, 930)
+        self.resize(1760, 960)
         self.setMinimumSize(1050, 650)
         central = QWidget()
         self.setCentralWidget(central)
@@ -259,10 +259,9 @@ class StudioWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setObjectName('Header')
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(20, 15, 20, 15)
+        header.setContentsMargins(16, 10, 16, 10)
         header.setSpacing(10)
-        header.addWidget(label('DD', 'Brand'))
-        header.addWidget(label('MONITOR\nSTUDIO', 'Muted'))
+        header.addWidget(label('DD Monitor', 'Brand'))
         self.account = button('已读取本机登录' if self.cookies else '登录 Bilibili', self.login)
         self.account.setToolTip('点击重新扫码登录')
         header.addWidget(self.account)
@@ -276,44 +275,44 @@ class StudioWindow(QMainWindow):
         self.library_toggle = button('主播库', checkable=True)
         self.controls_toggle = button('控制条', checkable=True)
         self.chat_toggle = button('弹幕', checkable=True)
-        self.chat_toggle.setToolTip('显示 / 隐藏聊天面板  Ctrl+J')
+        self.chat_toggle.setToolTip('显示 / 隐藏所有直播间的聊天  Ctrl+J')
         for widget in (self.library_toggle, self.controls_toggle, self.chat_toggle):
             header.addWidget(widget)
+        header.addWidget(button('设置', lambda: self.chat_settings.show()))
         self.add = button('＋ 添加直播间', lambda: self.open_search(self.active), True)
         header.addWidget(self.add)
         outer.addWidget(header_frame)
 
         self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.setHandleWidth(8)
+        self.splitter.setHandleWidth(5)
         self.splitter.setChildrenCollapsible(False)
         self.library = self.build_library()
         self.splitter.addWidget(self.library)
         self.video_area = QWidget()
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
-        self.video_grid.setSpacing(10)
+        self.video_grid.setSpacing(8)
         self.tiles = [PlayerTile(index, instance, self.cookies, self) for index in range(9)]
         for tile in self.tiles:
             tile.selected.connect(self.select_tile)
             tile.add_requested.connect(self.open_search)
-            tile.chat_requested.connect(self.open_chat)
             tile.focus_requested.connect(self.focus_tile)
             tile.solo_requested.connect(self.solo_tile)
-            tile.chat_received.connect(self.chat_message)
             tile.room_resolved.connect(self.update_room)
             tile.changed.connect(self.tile_changed)
             saved = self.state['slot_settings'].get(str(tile.index), {})
             tile.volume.setValue(saved.get('volume', self.state['volume']))
             tile.set_muted(saved.get('muted', tile.index != 0))
             tile.quality.setCurrentIndex(max(0, tile.quality.findData(saved.get('quality', 250))))
+            tile.chat_width = max(145, int(saved.get('chat_width', 195)))
+            tile.chat_toggle.setChecked(saved.get('chat_visible', self.state['chat_visible']))
+            tile.toggle_chat(tile.chat_toggle.isChecked())
         self.splitter.addWidget(self.video_area)
-        self.chat_panel = self.build_chat()
-        self.splitter.addWidget(self.chat_panel)
+        self.chat_settings = self.build_chat_settings()
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
-        self.splitter.setStretchFactor(2, 0)
         content = QHBoxLayout()
-        content.setContentsMargins(16, 16, 16, 10)
+        content.setContentsMargins(10, 8, 10, 8)
         content.addWidget(self.splitter)
         outer.addLayout(content, 1)
 
@@ -335,22 +334,21 @@ class StudioWindow(QMainWindow):
         footer.addStretch()
         footer.addWidget(label('拖入主播开始播放  ·  Ctrl+K 添加  ·  Ctrl+J 聊天  ·  F11 全屏'))
         outer.addWidget(self.global_controls)
-        self.notice = label('准备就绪。添加几个喜欢的直播间，拼出你的观看空间。')
+        self.notice = label('Ctrl+K 添加直播间  ·  Ctrl+J 显示 / 收起所有弹幕')
         self.notice.setContentsMargins(22, 0, 20, 10)
         outer.addWidget(self.notice)
 
         self.library_toggle.toggled.connect(self.toggle_library)
         self.controls_toggle.toggled.connect(self.toggle_controls)
-        self.chat_toggle.toggled.connect(self.toggle_chat)
         self.library_toggle.setChecked(bool(self.state['library_visible']))
         self.controls_toggle.setChecked(bool(self.state['controls_visible']))
-        self.chat_toggle.setChecked(bool(self.state['chat_visible']))
+        self.chat_toggle.setChecked(any(t.chat_toggle.isChecked() for t in self.tiles))
+        self.chat_toggle.toggled.connect(self.toggle_chat)
         self.library.setVisible(self.library_toggle.isChecked())
-        self.chat_panel.setVisible(self.chat_toggle.isChecked())
         self.toggle_controls(self.controls_toggle.isChecked())
         self.splitter.splitterMoved.connect(lambda *_: self.save())
-        self.splitter.setSizes(self.state['splitter'])
-        self.chat_width = self.state['splitter'][2]
+        sizes = self.state['splitter']
+        self.splitter.setSizes([sizes[0], sum(sizes[1:])])
         self.library_width = self.state['splitter'][0]
         self.shortcuts = []
         for keys, callback in [('Ctrl+K', lambda: self.open_search(self.active)), ('Ctrl+J', self.chat_toggle.click),
@@ -363,9 +361,6 @@ class StudioWindow(QMainWindow):
         self.arrange()
         self.ready = True
         self.select_tile(0)
-        self.chat_timer = QTimer(self)
-        self.chat_timer.timeout.connect(lambda: self.chat_status.setText(self.tiles[self.active].chat_status))
-        self.chat_timer.start(1000)
         if not demo:
             QTimer.singleShot(100, self.restore_rooms)
 
@@ -397,53 +392,40 @@ class StudioWindow(QMainWindow):
         box.addWidget(label('双击播放 · 拖动到指定画面'))
         return frame
 
-    def build_chat(self):
-        frame = QFrame()
-        frame.setObjectName('ChatPanel')
-        frame.setMinimumWidth(235)
-        frame.setMaximumWidth(650)
-        box = QVBoxLayout(frame)
-        box.setContentsMargins(13, 16, 13, 13)
+    def build_chat_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('弹幕设置')
+        dialog.setMinimumWidth(340)
+        box = QVBoxLayout(dialog)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(16)
+        box.addWidget(label('弹幕显示', 'Heading'))
+        box.addWidget(label('应用到每个直播间，栏宽可分别拖动调整。'))
         row = QHBoxLayout()
-        row.addWidget(label('直播聊天', 'Heading'), 1)
-        row.addWidget(button('收起', lambda: self.chat_toggle.setChecked(False)))
-        box.addLayout(row)
-        self.chat_room = QComboBox()
-        for i in range(9):
-            self.chat_room.addItem(f'画面 {i + 1} · 未添加', i)
-        self.chat_room.currentIndexChanged.connect(self.select_tile)
-        box.addWidget(self.chat_room)
-        self.chat_status = label('选择直播间后显示聊天')
-        box.addWidget(self.chat_status)
-        self.chat_view = ChatView()
-        self.chat_view.follow = bool(self.state['chat_follow'])
-        box.addWidget(self.chat_view, 1)
-        settings = QHBoxLayout()
-        settings.addWidget(label('字号'))
+        row.addWidget(label('文字大小'))
         self.chat_font = QSpinBox()
         self.chat_font.setRange(10, 24)
         self.chat_font.setValue(self.state['chat_font'])
         self.chat_font.valueChanged.connect(self.set_chat_font)
-        settings.addWidget(self.chat_font)
-        self.show_names = QCheckBox('昵称 / 粉丝牌')
-        self.show_names.setChecked(True)
+        row.addWidget(self.chat_font)
+        box.addLayout(row)
+        self.show_names = QCheckBox('显示昵称和粉丝牌')
+        self.show_names.setChecked(self.state.get('chat_names', True))
         self.show_names.toggled.connect(self.toggle_names)
-        settings.addWidget(self.show_names, 1)
-        box.addLayout(settings)
-        row = QHBoxLayout()
+        box.addWidget(self.show_names)
         self.follow = QCheckBox('跟随新消息')
         self.follow.setChecked(self.state['chat_follow'])
         self.follow.toggled.connect(self.set_follow)
-        row.addWidget(self.follow, 1)
-        row.addWidget(button('回到底部', lambda: self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum())))
-        box.addLayout(row)
+        box.addWidget(self.follow)
+        box.addWidget(button('完成', dialog.accept, True))
         self.set_chat_font(self.chat_font.value())
-        return frame
+        self.toggle_names(self.show_names.isChecked())
+        self.set_follow(self.follow.isChecked())
+        return dialog
 
     def update_room(self, room):
         self.rooms[room['id']] = room
         self.refresh_library()
-        self.update_chat_choices()
         self.save()
 
     def refresh_library(self, *_):
@@ -496,37 +478,18 @@ class StudioWindow(QMainWindow):
             self.refresh_library()
             self.save()
 
-    def update_chat_choices(self):
-        for tile in self.tiles:
-            name = tile.room['name'] if tile.room else '未添加'
-            self.chat_room.setItemText(tile.index, f'画面 {tile.index + 1} · {name}')
-            self.chat_room.model().item(tile.index).setEnabled(tile.index < self.count)
-
     def select_tile(self, index):
         if not 0 <= index < len(self.tiles):
             return
         self.active = index
         for tile in self.tiles:
             tile.set_active(tile.index == index)
-        self.chat_room.blockSignals(True)
-        self.chat_room.setCurrentIndex(index)
-        self.chat_room.blockSignals(False)
-        self.chat_view.show_history(self.tiles[index].history)
-        self.chat_status.setText(self.tiles[index].chat_status)
-
-    def open_chat(self, index):
-        self.select_tile(index)
-        self.chat_toggle.setChecked(True)
-
-    def chat_message(self, index, message):
-        if index == self.active:
-            self.chat_view.add_message(message)
 
     def tile_changed(self):
         if self.ready:
-            self.update_chat_choices()
-            if not self.tiles[self.active].room:
-                self.chat_view.clear()
+            self.chat_toggle.blockSignals(True)
+            self.chat_toggle.setChecked(any(t.chat_toggle.isChecked() for t in self.tiles[:self.count]))
+            self.chat_toggle.blockSignals(False)
             self.save()
 
     def change_layout(self, *_):
@@ -554,7 +517,6 @@ class StudioWindow(QMainWindow):
             self.tiles[index].show()
         for tile in self.tiles:
             tile.suspend(tile.index not in indices)
-        self.update_chat_choices()
 
     def focus_tile(self, index):
         self.focused = None if self.focused == index else index
@@ -572,13 +534,8 @@ class StudioWindow(QMainWindow):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
     def toggle_chat(self, shown):
-        if not shown and self.chat_panel.isVisible():
-            self.chat_width = self.splitter.sizes()[2]
-        self.chat_panel.setVisible(shown)
-        if shown and hasattr(self, 'chat_width'):
-            sizes = self.splitter.sizes()
-            width = self.chat_width or 300
-            self.splitter.setSizes([sizes[0], max(400, sum(sizes) - sizes[0] - width), width])
+        for tile in self.tiles:
+            tile.chat_toggle.setChecked(shown)
         self.save()
 
     def toggle_library(self, shown):
@@ -588,7 +545,7 @@ class StudioWindow(QMainWindow):
         if shown and hasattr(self, 'library_width'):
             sizes = self.splitter.sizes()
             width = self.library_width or 235
-            self.splitter.setSizes([width, max(400, sum(sizes) - width - sizes[2]), sizes[2]])
+            self.splitter.setSizes([width, max(400, sum(sizes) - width)])
         self.save()
 
     def toggle_controls(self, shown):
@@ -599,20 +556,24 @@ class StudioWindow(QMainWindow):
         self.save()
 
     def set_chat_font(self, size):
-        self.chat_view.setStyleSheet(f'QTextBrowser {{ font-size: {size}px; }}')
         font = QFont('Microsoft YaHei UI')
         font.setPixelSize(size)
-        self.chat_view.document().setDefaultFont(font)
+        for tile in self.tiles:
+            tile.chat_view.setStyleSheet(f'QTextBrowser {{ font-size: {size}px; }}')
+            tile.chat_view.document().setDefaultFont(font)
         self.save()
 
     def toggle_names(self, shown):
-        self.chat_view.names = shown
-        self.chat_view.show_history(self.tiles[self.active].history)
+        for tile in self.tiles:
+            tile.chat_view.names = shown
+            tile.chat_view.show_history(tile.history)
+        self.save()
 
     def set_follow(self, follow):
-        self.chat_view.follow = follow
-        if follow:
-            self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum())
+        for tile in self.tiles:
+            tile.chat_view.follow = follow
+            if follow:
+                tile.chat_view.verticalScrollBar().setValue(tile.chat_view.verticalScrollBar().maximum())
         self.save()
 
     def set_all_volume(self, value):
@@ -669,24 +630,24 @@ class StudioWindow(QMainWindow):
         if not self.ready or self.closing or self.demo:
             return
         sizes = self.splitter.sizes()
-        if not self.chat_toggle.isChecked():
-            sizes[2] = getattr(self, 'chat_width', 300)
         if not self.library_toggle.isChecked():
             sizes[0] = getattr(self, 'library_width', 235)
         self.state.update({'rooms': list(self.rooms.values()), 'slots': [tile.room['id'] if tile.room else None for tile in self.tiles],
                           'layout': self.count, 'chat_visible': self.chat_toggle.isChecked(),
                           'library_visible': self.library_toggle.isChecked(), 'controls_visible': self.controls_toggle.isChecked(),
                           'chat_font': self.chat_font.value(), 'chat_follow': self.follow.isChecked(),
+                          'chat_names': self.show_names.isChecked(),
                           'splitter': sizes, 'volume': self.master_volume.value(),
                           'slot_settings': {str(tile.index): {'volume': tile.volume.value(), 'muted': tile.muted,
-                                            'quality': tile.quality.currentData()} for tile in self.tiles}})
+                                            'quality': tile.quality.currentData(),
+                                            'chat_visible': tile.chat_toggle.isChecked(),
+                                            'chat_width': tile.chat_width} for tile in self.tiles}})
         save_json(self.state_path, self.state)
 
     def closeEvent(self, event):
         if not self.closing:
             self.save()
             self.closing = True
-            self.chat_timer.stop()
             for tile in self.tiles:
                 tile.shutdown()
         # Never destroy a live QThread; finish network cancellation before exit.

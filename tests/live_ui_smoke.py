@@ -28,25 +28,27 @@ for tile in window.tiles:
 window.show()
 result = {}
 def start():
-    window.add_rooms([{'id': '31294374', 'name': 'OA-LEAVE7', 'live': True, 'title': ''}], 0)
+    window.add_rooms([{'id': '31294374', 'name': 'OA-LEAVE7', 'live': True, 'title': ''},
+                      {'id': '4792266', 'name': 'OA-Guxue8', 'live': True, 'title': ''}], 0)
 def finish():
-    tile = window.tiles[0]
-    media = tile.player.get_media()
-    stats = vlc.MediaStats()
-    if media:
-        media.get_stats(stats)
-    result['frames'] = stats.decoded_video
-    print('PLAYER_STATUS', tile.status.text(), tile.player.get_state(),
-          'PENDING', tile.request_pending, 'HAS_MEDIA', bool(media), flush=True)
-    result['messages'] = len(tile.history)
-    before = len(tile.history)
+    for tile in window.tiles[:2]:
+        media = tile.player.get_media()
+        stats = vlc.MediaStats()
+        if media:
+            media.get_stats(stats)
+        result[f'frames_{tile.index}'] = stats.decoded_video
+        result[f'messages_{tile.index}'] = len(tile.history)
+        result[f'displayed_{tile.index}'] = bool(tile.chat_view.toPlainText())
+    before = [len(t.history) for t in window.tiles[:2]]
     window.chat_toggle.click()
     app.processEvents()
-    result['hidden'] = not window.chat_panel.isVisible()
+    result['hidden'] = all(not t.chat_panel.isVisible() for t in window.tiles[:2])
     window.chat_toggle.click()
     app.processEvents()
-    result['restored'] = window.chat_panel.isVisible() and len(tile.history) >= before
-    result['displayed'] = bool(window.chat_view.toPlainText())
+    result['restored'] = all(t.chat_panel.isVisible() and len(t.history) >= n
+                             for t, n in zip(window.tiles[:2], before))
+    window.tiles[0].chat_toggle.click()
+    result['independent_toggle'] = not window.tiles[0].chat_panel.isVisible() and window.tiles[1].chat_panel.isVisible()
     print('INTEGRATED_UI', result, flush=True)
     window.close()
 QTimer.singleShot(100, start)

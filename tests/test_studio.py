@@ -68,36 +68,58 @@ class UITests(unittest.TestCase):
 
     def test_chat_toggle_keeps_history_and_restores_width(self):
         w = self.window
-        message = {'name': '观众', 'text': '固定聊天列表'}
-        w.tiles[0].history.append(message)
-        w.select_tile(0)
-        width = w.chat_panel.width()
-        original_video_width = w.video_area.width()
+        tile = w.tiles[0]
+        tile.receive_chat(None, {'name': '观众', 'text': '固定聊天列表'})
+        width = tile.chat_panel.width()
+        original_video_width = tile.stack.width()
         w.chat_toggle.click()
         self.app.processEvents()
-        self.assertFalse(w.chat_panel.isVisible())
-        self.assertGreater(w.video_area.width(), original_video_width)
+        self.assertFalse(tile.chat_panel.isVisible())
+        self.assertGreater(tile.stack.width(), original_video_width)
         w.chat_toggle.click()
         self.app.processEvents()
-        self.assertTrue(w.chat_panel.isVisible())
-        self.assertIn('固定聊天列表', w.chat_view.toPlainText())
-        self.assertLess(abs(w.chat_panel.width() - width), 20)
+        self.assertTrue(tile.chat_panel.isVisible())
+        self.assertIn('固定聊天列表', tile.chat_view.toPlainText())
+        self.assertLess(abs(tile.chat_panel.width() - width), 20)
 
     def test_independent_panels_and_chat_switch(self):
         w = self.window
-        w.tiles[0].history.append({'name': 'A', 'text': '房间一'})
-        w.tiles[1].history.append({'name': 'B', 'text': '房间二'})
+        a, b = w.tiles[:2]
+        a.receive_chat(None, {'name': 'A', 'text': '房间一'})
+        b.receive_chat(None, {'name': 'B', 'text': '房间二'})
         w.select_tile(1)
-        self.assertIn('房间二', w.chat_view.toPlainText())
-        self.assertNotIn('房间一', w.chat_view.toPlainText())
+        self.assertIn('房间一', a.chat_view.toPlainText())
+        self.assertNotIn('房间二', a.chat_view.toPlainText())
+        self.assertIn('房间二', b.chat_view.toPlainText())
+        self.assertNotIn('房间一', b.chat_view.toPlainText())
+        self.assertTrue(a.chat_panel.isVisible() and b.chat_panel.isVisible())
+        a.chat_toggle.click()
+        self.assertFalse(a.chat_panel.isVisible())
+        self.assertTrue(b.chat_panel.isVisible())
         w.library_toggle.click()
         w.controls_toggle.click()
         self.assertFalse(w.library.isVisible())
         self.assertFalse(w.global_controls.isVisible())
-        self.assertTrue(w.chat_panel.isVisible())
-        self.assertFalse(w.tiles[0].controls.isVisible())
+        self.assertTrue(b.chat_panel.isVisible())
+        self.assertFalse(a.controls.isVisible())
         w.controls_toggle.click()
-        self.assertTrue(w.tiles[0].controls.isVisible())
+        self.assertTrue(a.controls.isVisible())
+
+    def test_individual_chat_settings_persist(self):
+        w = self.window
+        w.demo = False
+        w.tiles[0].chat_width = 215
+        w.tiles[0].chat_toggle.setChecked(False)
+        w.save()
+        saved = load_state(self.path)
+        self.assertFalse(saved['slot_settings']['0']['chat_visible'])
+        self.assertTrue(saved['slot_settings']['1']['chat_visible'])
+        again = StudioWindow(ROOT, demo=True, state_path=self.path)
+        again.show()
+        self.app.processEvents()
+        self.assertFalse(again.tiles[0].chat_panel.isVisible())
+        self.assertTrue(again.tiles[1].chat_panel.isVisible())
+        again.close()
 
     def test_search_selection_and_stale_response(self):
         dialog = SearchDialog({}, 0, 4, self.window)
@@ -140,7 +162,7 @@ class UITests(unittest.TestCase):
     def test_chat_font_is_not_overridden_by_global_theme(self):
         self.window.chat_font.setValue(21)
         self.app.processEvents()
-        self.assertEqual(self.window.chat_view.font().pixelSize(), 21)
+        self.assertEqual(self.window.tiles[0].chat_view.font().pixelSize(), 21)
 
     def test_stale_stream_cannot_replace_cleared_room(self):
         tile = self.window.tiles[0]
@@ -160,7 +182,7 @@ class UITests(unittest.TestCase):
         tile.remove.click()
         self.assertTrue(changed)
         self.assertIsNone(tile.room)
-        self.assertEqual(self.window.chat_view.toPlainText(), '')
+        self.assertEqual(tile.chat_view.toPlainText(), '')
 
     def test_preview(self):
         w = self.window
@@ -172,11 +194,13 @@ class UITests(unittest.TestCase):
             tile.name.setText(f'{tile.index + 1:02d}   {room["name"]}')
             tile.empty_title.setText('直播画面')
             tile.empty_hint.setText('界面预览 · 实际运行时显示直播视频')
-        w.update_chat_choices()
-        for i in range(15):
-            w.tiles[0].history.append({'name': ['一只观众', '今天也要开心', '山间的风'][i % 3],
-                                       'text': ['这种固定聊天面板看起来舒服多了', '终于可以直接搜索主播了！', '点一下顶部「聊天」就能收起来'][i % 3],
-                                       'medal': '观众牌' if i % 2 else '', 'level': '21'})
+        for tile in w.tiles[:4]:
+            tile.empty_add.hide()
+            tile.chat_connection.setText('已连接')
+            for i in range(12):
+                tile.receive_chat(None, {'name': ['山间的风', '一只观众', '周末看直播'][i % 3],
+                    'text': [f'这里是 {tile.room["name"]} 的聊天', '这个操作可以！', '每个房间的消息分开看'][i % 3],
+                    'medal': '观众牌' if i % 3 == 0 else '', 'level': '21'})
         w.select_tile(0)
         w.notice.setText('界面预览 · 示例聊天数据，不代表真实直播内容')
         self.app.processEvents()

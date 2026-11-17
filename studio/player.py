@@ -1,7 +1,8 @@
 from collections import deque
 from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool
 from PySide6.QtWidgets import (QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSlider, QComboBox, QStackedWidget)
+                               QSlider, QComboBox, QStackedWidget, QSplitter)
+from .chat import ChatView
 from .services import BiliAPI, Job, ChatWorker
 
 
@@ -28,26 +29,32 @@ class PlayerTile(QFrame):
         self.paused = False
         self.suspended = False
         self.request_pending = False
+        self.chat_width = 195
         self.setObjectName('VideoTile')
         self.setMinimumSize(290, 205)
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(9, 7, 9, 7)
-        layout.setSpacing(6)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
         header = QHBoxLayout()
+        header.setContentsMargins(9, 6, 9, 6)
         self.name = QPushButton(f'{index + 1:02d}   选择一个直播间')
         self.name.setObjectName('Ghost')
         self.name.setStyleSheet('text-align: left; border: 0; font-weight: 600;')
         self.name.clicked.connect(lambda: self.selected.emit(index))
         header.addWidget(self.name, 1)
         for label, tooltip, callback in [('+', '添加或替换直播间', lambda: self.add_requested.emit(index)),
-                                          ('聊天', '查看此房间聊天', lambda: self.chat_requested.emit(index)),
                                           ('放大', '聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(index))]:
             button = QPushButton(label)
             button.setToolTip(tooltip)
             button.setFixedHeight(30)
             button.clicked.connect(callback)
             header.addWidget(button)
+        self.chat_toggle = QPushButton('弹幕')
+        self.chat_toggle.setCheckable(True)
+        self.chat_toggle.setChecked(True)
+        self.chat_toggle.setToolTip('显示 / 收起这个直播间的聊天')
+        header.addWidget(self.chat_toggle)
         layout.addLayout(header)
         self.stack = QStackedWidget()
         self.empty = QWidget()
@@ -72,7 +79,36 @@ class PlayerTile(QFrame):
         self.surface.setObjectName('Surface')
         self.surface.setAttribute(Qt.WA_NativeWindow)
         self.stack.addWidget(self.surface)
-        layout.addWidget(self.stack, 1)
+        self.content_splitter = QSplitter(Qt.Horizontal)
+        self.content_splitter.setChildrenCollapsible(False)
+        self.content_splitter.setHandleWidth(4)
+        self.stack.setMinimumWidth(160)
+        self.content_splitter.addWidget(self.stack)
+        self.chat_panel = QFrame()
+        self.chat_panel.setObjectName('RoomChat')
+        self.chat_panel.setMinimumWidth(145)
+        chat_layout = QVBoxLayout(self.chat_panel)
+        chat_layout.setContentsMargins(6, 6, 6, 5)
+        chat_layout.setSpacing(4)
+        self.chat_view = ChatView()
+        chat_layout.addWidget(self.chat_view, 1)
+        chat_footer = QHBoxLayout()
+        self.chat_connection = QLabel('等待连接')
+        self.chat_connection.setObjectName('Muted')
+        self.chat_connection.setToolTip(self.chat_status)
+        chat_footer.addWidget(self.chat_connection, 1)
+        self.chat_bottom = QPushButton('最新 ↓')
+        self.chat_bottom.setToolTip('回到最新消息')
+        self.chat_bottom.clicked.connect(lambda: self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum()))
+        chat_footer.addWidget(self.chat_bottom)
+        chat_layout.addLayout(chat_footer)
+        self.content_splitter.addWidget(self.chat_panel)
+        self.content_splitter.setStretchFactor(0, 1)
+        self.content_splitter.setStretchFactor(1, 0)
+        self.content_splitter.setSizes([420, self.chat_width])
+        self.content_splitter.splitterMoved.connect(self.remember_chat_width)
+        self.chat_toggle.toggled.connect(self.toggle_chat)
+        layout.addWidget(self.content_splitter, 1)
         self.player = instance.media_player_new() if instance else None
         if self.player:
             self.player.set_hwnd(int(self.surface.winId()))
@@ -81,7 +117,7 @@ class PlayerTile(QFrame):
 
         self.controls = QWidget()
         controls = QHBoxLayout(self.controls)
-        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setContentsMargins(8, 5, 8, 5)
         controls.setSpacing(5)
         self.play_button = QPushButton('暂停')
         self.play_button.clicked.connect(self.toggle_pause)
@@ -121,11 +157,26 @@ class PlayerTile(QFrame):
         self.status = QLabel('等待添加 · 支持拖入主播')
         self.status.setObjectName('Muted')
         self.status.setWordWrap(True)
+        self.status.setContentsMargins(10, 0, 10, 5)
         layout.addWidget(self.status)
         self.monitor = QTimer(self)
         self.monitor.timeout.connect(self.monitor_playback)
         self.monitor.start(1000)
         self.apply_audio()
+
+    def remember_chat_width(self, *_):
+        if self.chat_toggle.isChecked():
+            self.chat_width = self.content_splitter.sizes()[1]
+        self.changed.emit()
+
+    def toggle_chat(self, shown):
+        if not shown and not self.chat_panel.isHidden():
+            self.chat_width = self.content_splitter.sizes()[1] or self.chat_width
+        self.chat_panel.setVisible(shown)
+        if shown:
+            total = sum(self.content_splitter.sizes())
+            self.content_splitter.setSizes([max(160, total - self.chat_width), self.chat_width])
+        self.changed.emit()
 
     def set_active(self, value):
         self.setProperty('active', value)
@@ -251,11 +302,14 @@ class PlayerTile(QFrame):
     def receive_chat(self, worker, message):
         if worker is self.chat_worker:
             self.history.append(message)
+            self.chat_view.add_message(message)
             self.chat_received.emit(self.index, message)
 
     def set_chat_status(self, worker, text):
         if worker is self.chat_worker:
             self.chat_status = text
+            self.chat_connection.setText('已连接' if '已连接' in text else ('连接中' if '连接' in text else text))
+            self.chat_connection.setToolTip(text)
 
     def retire_chat(self):
         worker = self.chat_worker
@@ -277,6 +331,8 @@ class PlayerTile(QFrame):
             self.player.stop()
         self.retire_chat()
         self.history.clear()
+        self.chat_view.clear()
+        self.chat_connection.setText('等待连接')
         self.room = None
         self.paused = False
         self.play_button.setText('暂停')

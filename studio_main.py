@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 import logging
+from studio.runtime import isolate_process
+isolate_process(Path(__file__).resolve().parent)
 from studio.app import main
 
 if __name__ == '__main__':

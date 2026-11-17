@@ -4,6 +4,7 @@ from PySide6.QtGui import QImage, QTextDocument
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import QTextBrowser
 from .services import safe_image
+from .runtime import configure_qt_tls
 
 
 def message_html(message, names=True):
@@ -18,9 +19,9 @@ def message_html(message, names=True):
         text = f'<img width="48" height="48" alt="{text}" src="{html.escape(emoji, quote=True)}">'
     medal = ''
     if names and message.get('medal'):
-        medal = f'<span style="color:#d2c3ff;background-color:#3c335d;"> {html.escape(message["medal"])} {html.escape(message.get("level", ""))} </span> '
-    sender = f'<span style="color:#7db9ce;">{name}</span><span style="color:#8390a6;">：</span>' if names else ''
-    return f'<p style="margin:7px 0;line-height:145%;">{medal}{sender}<span style="color:#e1e7f1;">{text}</span></p>'
+        medal = f'<span style="color:#bcbcbc;background-color:#353535;"> {html.escape(message["medal"])} {html.escape(message.get("level", ""))} </span> '
+    sender = f'<span style="color:#a9a9a9;">{name}</span><span style="color:#888888;">：</span>' if names else ''
+    return f'<p style="margin:6px 0;line-height:140%;">{medal}{sender}<span style="color:#dedede;">{text}</span></p>'
 
 
 class ChatView(QTextBrowser):
@@ -29,12 +30,13 @@ class ChatView(QTextBrowser):
         self.setOpenExternalLinks(False)
         self.setReadOnly(True)
         self.document().setMaximumBlockCount(500)
+        configure_qt_tls()
         self.network = QNetworkAccessManager(self)
         self.pending = set()
         self.images = {}
         self.follow = True
         self.names = True
-        self.setPlaceholderText('这里会显示所选直播间的聊天\n昵称、粉丝牌、表情都会按条排列')
+        self.setPlaceholderText('等待这个直播间的消息')
 
     def loadResource(self, resource_type, url):
         if resource_type != QTextDocument.ImageResource:
