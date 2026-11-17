@@ -22,7 +22,6 @@ QListWidget::item { border-radius: 5px; padding: 8px; margin: 1px 0; }
 QListWidget::item:hover { background: #2d2d2d; }
 QListWidget::item:selected { background: #363636; color: #f0f0f0; }
 QFrame#VideoTile { background: #202020; border: 1px solid #3b3b3b; border-radius: 5px; }
-QFrame#VideoTile[active="true"] { border: 1px solid #777777; }
 QWidget#TileToolbar QPushButton { padding: 3px 6px; }
 QWidget#TileToolbar QComboBox { padding: 3px 6px; }
 QWidget#TileToolbar QPushButton[iconOnly="true"], QPushButton[iconOnly="true"] { padding: 0; }
