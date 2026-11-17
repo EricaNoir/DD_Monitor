@@ -54,3 +54,11 @@ def configure_vlc(root):
     os.environ['PYTHON_VLC_MODULE_PATH'] = str(runtime)
     os.environ['PYTHON_VLC_LIB_PATH'] = str(runtime / 'libvlc.dll')
     return os.add_dll_directory(str(runtime)) if os.name == 'nt' else None
+
+
+def create_vlc_instance(*extra_options):
+    import vlc
+    # MMDevice shares session volume/mute across this process's players.
+    # DirectSound controls each player's own buffer instead.
+    return vlc.Instance('--quiet', '--no-video-title-show', '--avcodec-hw=any',
+                        '--aout=directsound', '--no-volume-save', *extra_options)

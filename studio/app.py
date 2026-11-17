@@ -885,7 +885,7 @@ def main(root, demo=False):
     import sys
     root = Path(root)
     os.chdir(root)
-    from .runtime import configure_vlc
+    from .runtime import configure_vlc, create_vlc_instance
     dll_handle = None if demo else configure_vlc(root)
     app = QApplication(sys.argv)
     app.setApplicationName('DD Monitor Studio')
@@ -894,8 +894,7 @@ def main(root, demo=False):
     app.setStyleSheet((root / 'studio' / 'theme.qss').read_text(encoding='utf-8'))
     instance = None
     if not demo:
-        import vlc
-        instance = vlc.Instance('--quiet', '--no-video-title-show', '--avcodec-hw=any')
+        instance = create_vlc_instance()
     if not demo and not instance:
         QMessageBox.critical(None, '播放器初始化失败', '找不到 VLC 运行库，请检查 libvlc.dll 和 plugins 目录。')
         return 1

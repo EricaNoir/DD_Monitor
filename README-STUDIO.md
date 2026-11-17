@@ -30,6 +30,7 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 .\.venv\Scripts\python.exe tests\live_ui_smoke.py
 .\.venv\Scripts\python.exe tests\tls_smoke.py
 .\.venv\Scripts\python.exe tests\avatar_smoke.py
+.\.venv\Scripts\python.exe tests\audio_smoke.py
 ```
 
 第一条离线验证面板开关、宽度/记录保留、设置保存、房间切换、异步过期结果和字号等行为。生成 `.qa/` 下的界面预览，预览使用明确标注的示例聊天。第二条是主动联网的只读验证，检查搜索、真实解码和弹幕接收，不发送消息，不输出登录信息或视频鉴权 URL。
@@ -37,6 +38,8 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 `live_ui_smoke.py` 验证两个真实直播间同时播放、分别显示消息和独立开关。`tls_smoke.py` 验证真实 HTTPS 图片加载。Windows 启动时仅在当前进程内隔离 DLL 搜索路径，Qt 使用 Windows Schannel TLS 后端，避免宿主程序的 OpenSSL DLL 污染；不修改系统 PATH 或关闭证书验证。
 
 `avatar_smoke.py` 验证真实主播头像下载及缓存，并生成展开侧栏和收起头像栏的预览。
+
+`audio_smoke.py` 使用本地无声 PCM 验证真实 Windows 音频输出的独立静音、音量和播放进度，不访问网络。Studio 使用 DirectSound 的独立缓冲区控制每个窗口，避免 VLC MMDevice 的共享会话静音/音量互相覆盖；状态轮询不会重复写入未改变的音频设置。音频实现可参见 VLC 的 [MMDevice](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/mmdevice.c) 和 [DirectSound](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/directsound.c) 源码。
 
 ## 来源
 

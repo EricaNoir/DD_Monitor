@@ -386,6 +386,49 @@ class UITests(unittest.TestCase):
         w.swap_tiles(0, 8)
         self.assertEqual(w.tiles, unchanged)
 
+    def test_single_mute_does_not_write_other_players_or_repeat_each_tick(self):
+        w = self.window
+        a, b = w.tiles[:2]
+        for tile in (a, b):
+            tile.room = {'id': str(tile.index), 'name': str(tile.index)}
+            tile.player = Mock()
+            tile.player.audio_set_volume.return_value = 0
+            tile.player.get_state.return_value = 'State.Playing'
+            tile.set_muted(False)
+            tile.apply_audio()
+            tile.player.reset_mock()
+        changes = []
+        a.changed.connect(lambda: changes.append(True))
+        a.mute_button.click()
+        a.player.audio_set_mute.assert_called_once_with(True)
+        a.player.audio_set_volume.assert_not_called()
+        self.assertFalse(b.player.mock_calls)
+        self.assertFalse(b.muted)
+        self.assertEqual(len(changes), 1)
+        for _ in range(4):
+            a.monitor_playback()
+            b.monitor_playback()
+        a.player.audio_set_mute.assert_called_once_with(True)
+        b.player.audio_set_mute.assert_not_called()
+        b.player.audio_set_volume.assert_not_called()
+        a.player.reset_mock()
+        a.set_muted(False)
+        a.player.audio_set_mute.assert_called_once_with(False)
+        self.assertEqual(len(changes), 2)
+        a.set_muted(False)
+        a.player.audio_set_mute.assert_called_once_with(False)
+        self.assertEqual(len(changes), 2)
+        a.player.reset_mock()
+        a.volume.setValue(27)
+        a.player.audio_set_volume.assert_called_once_with(27)
+        a.player.audio_set_mute.assert_not_called()
+        a.player.reset_mock()
+        a._audio_pending = True
+        a.monitor_playback()
+        a.monitor_playback()
+        a.player.audio_set_mute.assert_called_once_with(False)
+        a.player.audio_set_volume.assert_called_once_with(27)
+
     def test_title_drag_threshold_and_source_validation(self):
         w = self.window
         tile = w.tiles[0]
