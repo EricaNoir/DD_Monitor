@@ -13,6 +13,7 @@ from studio.services import room_number, plain, safe_image, parse_chat
 from studio.chat import message_html
 from studio.state import load_state, save_json
 from studio.app import StudioWindow, SearchDialog
+from studio.player import PlayerTile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -189,6 +190,35 @@ class UITests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertIsNone(tile.room)
         self.assertEqual(tile.chat_view.toPlainText(), '')
+
+    def test_single_toolbar_and_narrow_window_controls(self):
+        tile = PlayerTile(0, None, {})
+        try:
+            tile.resize(480, 300)
+            tile.show()
+            self.app.processEvents()
+            self.assertEqual(tile.toolbar.height(), 36)
+            self.assertGreaterEqual(tile.content_splitter.height(), tile.height() - 40)
+            self.assertFalse(tile.status.isVisible())
+            self.assertTrue(tile.more.isVisible())
+            self.assertFalse(tile.volume.isVisible())
+            self.assertTrue(tile.play_button.isVisible() and tile.mute_button.isVisible())
+            self.assertTrue(tile.remove.isVisible())
+            tile.menu_volume.setValue(67)
+            self.assertEqual(tile.volume.value(), 67)
+            tile.volume.setValue(19)
+            self.assertEqual(tile.menu_volume.value(), 19)
+            with patch.object(tile, 'reload') as reload:
+                tile.retry_action.trigger()
+                reload.assert_called_once_with(reconnect_chat=True)
+            tile.resize(900, 400)
+            self.app.processEvents()
+            self.assertTrue(tile.volume.isVisible() and tile.retry.isVisible())
+            self.assertFalse(tile.more.isVisible())
+            self.assertEqual(tile.toolbar.height(), 36)
+        finally:
+            tile.shutdown()
+            tile.close()
 
     def test_avatar_rail_can_restore_sidebar_and_focus_without_reload(self):
         w = self.window

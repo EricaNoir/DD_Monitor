@@ -1,9 +1,24 @@
 from collections import deque
 from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool
 from PySide6.QtWidgets import (QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSlider, QComboBox, QStackedWidget, QSplitter)
+                               QSlider, QComboBox, QStackedWidget, QSplitter, QMenu, QWidgetAction,
+                               QSizePolicy, QStylePainter, QStyleOptionButton, QStyle)
 from .chat import ChatView
 from .services import BiliAPI, Job, ChatWorker
+
+
+class RoomTitle(QPushButton):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.setMinimumWidth(64)
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, max(0, self.width() - 14))
+        painter.drawControl(QStyle.CE_PushButton, option)
 
 
 class PlayerTile(QFrame):
@@ -36,13 +51,20 @@ class PlayerTile(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
-        header = QHBoxLayout()
-        header.setContentsMargins(9, 6, 9, 6)
-        self.name = QPushButton(f'{index + 1:02d}   选择一个直播间')
+        self.toolbar = QWidget()
+        self.toolbar.setObjectName('TileToolbar')
+        self.toolbar.setFixedHeight(36)
+        header = QHBoxLayout(self.toolbar)
+        header.setContentsMargins(6, 3, 6, 3)
+        header.setSpacing(3)
+        self.name = RoomTitle(f'{index + 1:02d}   选择一个直播间')
         self.name.setObjectName('Ghost')
         self.name.setStyleSheet('text-align: left; border: 0; font-weight: 600;')
         self.name.clicked.connect(lambda: self.selected.emit(index))
         header.addWidget(self.name, 1)
+        self.status_light = QLabel('•')
+        self.status_light.setFixedWidth(10)
+        header.addWidget(self.status_light)
         for label, tooltip, callback in [('+', '添加或替换直播间', lambda: self.add_requested.emit(index)),
                                           ('放大', '聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(index))]:
             button = QPushButton(label)
@@ -50,6 +72,8 @@ class PlayerTile(QFrame):
             button.setFixedHeight(30)
             button.clicked.connect(callback)
             header.addWidget(button)
+            if label == '+':
+                self.add_button = button
         self.chat_toggle = QPushButton('弹幕')
         self.chat_toggle.setCheckable(True)
         self.chat_toggle.setChecked(True)
@@ -61,7 +85,7 @@ class PlayerTile(QFrame):
         self.remove.setToolTip('关闭当前直播，保留在主播库')
         self.remove.clicked.connect(lambda: self.clear())
         header.addWidget(self.remove)
-        layout.addLayout(header)
+        layout.addWidget(self.toolbar)
         self.stack = QStackedWidget()
         self.empty = QWidget()
         empty_layout = QVBoxLayout(self.empty)
@@ -123,8 +147,8 @@ class PlayerTile(QFrame):
 
         self.controls = QWidget()
         controls = QHBoxLayout(self.controls)
-        controls.setContentsMargins(8, 5, 8, 5)
-        controls.setSpacing(5)
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(2)
         self.play_button = QPushButton('暂停')
         self.play_button.clicked.connect(self.toggle_pause)
         controls.addWidget(self.play_button)
@@ -136,7 +160,7 @@ class PlayerTile(QFrame):
         self.volume = QSlider(Qt.Horizontal)
         self.volume.setRange(0, 100)
         self.volume.setValue(35)
-        self.volume.setMinimumWidth(45)
+        self.volume.setFixedWidth(68)
         self.volume.setToolTip('此画面音量')
         self.volume.valueChanged.connect(self.set_volume)
         controls.addWidget(self.volume, 1)
@@ -155,16 +179,59 @@ class PlayerTile(QFrame):
         self.retry.setToolTip('重新连接视频和聊天')
         self.retry.clicked.connect(lambda: self.reload(reconnect_chat=True))
         controls.addWidget(self.retry)
-        layout.addWidget(self.controls)
-        self.status = QLabel('等待添加 · 支持拖入主播')
-        self.status.setObjectName('Muted')
-        self.status.setWordWrap(True)
-        self.status.setContentsMargins(10, 0, 10, 5)
-        layout.addWidget(self.status)
+        header.insertWidget(2, self.controls)
+        self.more = QPushButton('⋯')
+        self.more.setObjectName('MoreControls')
+        self.more.setFixedSize(28, 28)
+        self.more.setToolTip('更多直播控制')
+        self.more.setAccessibleName('更多直播控制')
+        self.more_menu = QMenu(self)
+        volume_widget = QWidget()
+        volume_row = QHBoxLayout(volume_widget)
+        volume_row.addWidget(QLabel('音量'))
+        self.menu_volume = QSlider(Qt.Horizontal)
+        self.menu_volume.setRange(0, 100)
+        self.menu_volume.setValue(self.volume.value())
+        self.menu_volume.setFixedWidth(120)
+        self.menu_volume.valueChanged.connect(self.volume.setValue)
+        self.volume.valueChanged.connect(self.menu_volume.setValue)
+        volume_row.addWidget(self.menu_volume)
+        volume_action = QWidgetAction(self.more_menu)
+        volume_action.setDefaultWidget(volume_widget)
+        self.more_menu.addAction(volume_action)
+        self.solo_action = self.more_menu.addAction('只听这个直播间', lambda: self.solo_requested.emit(index))
+        self.retry_action = self.more_menu.addAction('重新连接', lambda: self.reload(reconnect_chat=True))
+        self.more_menu.addSeparator()
+        self.more_menu.addAction('添加或替换直播间', lambda: self.add_requested.emit(index))
+        self.more.setMenu(self.more_menu)
+        header.insertWidget(header.indexOf(self.chat_toggle), self.more)
+        self.status = QLabel(self)
+        self.status.hide()
+        self.set_status('等待添加 · 支持拖入主播')
         self.monitor = QTimer(self)
         self.monitor.timeout.connect(self.monitor_playback)
         self.monitor.start(1000)
         self.apply_audio()
+        self.update_toolbar()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'more'):
+            self.update_toolbar()
+
+    def update_toolbar(self):
+        compact = self.width() < 640
+        for widget in (self.volume, self.solo, self.retry, self.add_button):
+            widget.setVisible(not compact)
+        self.more.setVisible(compact)
+
+    def set_status(self, text):
+        self.status.setText(text)
+        details = (self.room.get('name', '') + '\n' if self.room else '') + text
+        self.name.setToolTip(details)
+        self.status_light.setToolTip(details)
+        color = '#70bd91' if text.startswith('直播中') else ('#d8a074' if '失败' in text or '超时' in text else '#8b8b8b')
+        self.status_light.setStyleSheet(f'color: {color};')
 
     def remember_chat_width(self, *_):
         if self.chat_toggle.isChecked():
@@ -233,7 +300,7 @@ class PlayerTile(QFrame):
         self.generation += 1
         ticket = self.generation
         self.request_pending = True
-        self.status.setText('正在获取直播画面…')
+        self.set_status('正在获取直播画面…')
         self.empty_hint.setText('正在连接直播间…')
         api = BiliAPI(self.cookies)
         rid, quality = self.room['id'], self.quality.currentData()
@@ -255,7 +322,7 @@ class PlayerTile(QFrame):
             self.stack.setCurrentIndex(0)
             self.empty_title.setText(self.room['name'])
             self.empty_hint.setText('主播暂未开播，可以查看聊天或切换其他房间')
-            self.status.setText('未开播 · 点击 ↻ 重新检查')
+            self.set_status('未开播 · 点击 ↻ 重新检查')
             return
         if not self.player:
             self.failed(ticket, 'VLC 未加载，无法播放')
@@ -268,14 +335,14 @@ class PlayerTile(QFrame):
         self.player.play()
         media.release()
         self.stack.setCurrentIndex(1)
-        self.status.setText('正在缓冲…')
+        self.set_status('正在缓冲…')
         self.apply_audio()
 
     def failed(self, ticket, error):
         if ticket != self.generation:
             return
         self.request_pending = False
-        self.status.setText(error)
+        self.set_status(error)
         self.empty_hint.setText(error + '\n点击下方 ↻ 重试')
 
     def monitor_playback(self):
@@ -286,11 +353,11 @@ class PlayerTile(QFrame):
             self.apply_audio()
             if self.paused or self.suspended:
                 self.player.set_pause(True)
-            self.status.setText('直播中  ·  ' + self.room.get('title', ''))
+            self.set_status('直播中  ·  ' + self.room.get('title', ''))
         elif state == 'Error':
-            self.status.setText('播放连接失败 · 点击 ↻ 重试或降低清晰度')
+            self.set_status('播放连接失败 · 点击 ↻ 重试或降低清晰度')
         elif state == 'Paused':
-            self.status.setText('已暂停')
+            self.set_status('已暂停')
 
     def start_chat(self):
         self.retire_chat()
@@ -342,7 +409,7 @@ class PlayerTile(QFrame):
         self.empty_title.setText(f'画面 {self.index + 1:02d}')
         self.empty_hint.setText('搜索 UP 主，或粘贴直播间链接')
         self.stack.setCurrentIndex(0)
-        self.status.setText('等待添加 · 支持拖入主播')
+        self.set_status('等待添加 · 支持拖入主播')
         self.chat_status = '选择直播间后显示聊天'
         if emit:
             self.changed.emit()
