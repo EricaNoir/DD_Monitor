@@ -111,6 +111,7 @@ class SearchDialog(QDialog):
         parent = self.parent()
         self.favorite_ids = set(getattr(parent, 'favorites', ()))
         rooms = [dict(room, following=None) for rid, room in getattr(parent, 'rooms', {}).items() if rid in self.favorite_ids]
+        rooms.sort(key=lambda room: not room.get('live', False))
         self.show_results(ticket, {'rooms': rooms, 'more': False, 'follow_state': 'login_required' if not self.cookies else 'pending'})
         if self.cookies and rooms:
             api = BiliAPI(self.cookies)
@@ -548,7 +549,7 @@ class StudioWindow(QMainWindow):
         selected_id = current.data(Qt.UserRole)['id'] if current else None
         self.room_list.clear()
         query = self.library_filter.text().strip().casefold() if self.library_toggle.isChecked() else ''
-        for room in self.rooms.values():
+        for room in sorted(self.rooms.values(), key=lambda room: not room.get('live', False)):
             if room['id'] not in self.favorites:
                 continue
             if query and query not in (room['name'] + ' ' + room['id']).casefold():
