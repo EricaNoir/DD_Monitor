@@ -1,0 +1,192 @@
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import QApplication
+from studio.services import room_number, plain, safe_image, parse_chat
+from studio.chat import message_html
+from studio.state import load_state, save_json
+from studio.app import StudioWindow, SearchDialog
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class DataTests(unittest.TestCase):
+    def test_room_input(self):
+        self.assertEqual(room_number('https://live.bilibili.com/31294374?from=feed'), '31294374')
+        self.assertEqual(room_number('4792266'), '4792266')
+        self.assertIsNone(room_number('https://evil.example/31294374'))
+        self.assertIsNone(room_number('OA-LEAVE7'))
+        self.assertIsNone(room_number('0'))
+
+    def test_search_and_chat_html_are_escaped(self):
+        self.assertEqual(plain('<em>主播</em>&amp;伙伴'), '主播&伙伴')
+        markup = message_html({'name': '<img src=x>', 'text': '<script>alert(1)</script>', 'medal': '<b>', 'level': '5'})
+        self.assertNotIn('<script>', markup)
+        self.assertNotIn('<img src=x>', markup)
+        self.assertIn('&lt;script&gt;', markup)
+        self.assertEqual(safe_image('https://evil.example/image.png'), '')
+        self.assertTrue(safe_image('//i0.hdslb.com/test.png').startswith('https:'))
+
+    def test_raw_chat_keeps_sender_and_medal(self):
+        info = [[0] * 16, '你好', [123, '昵称'], [21, '粉丝牌']]
+        info[0][15] = {'extra': '{}'}
+        message = parse_chat({'cmd': 'DANMU_MSG:4:0:2', 'info': info})
+        self.assertEqual((message['name'], message['uid'], message['level']), ('昵称', '123', '21'))
+        self.assertIsNone(parse_chat({'cmd': 'SEND_GIFT'}))
+
+
+class UITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+        # The offscreen Windows plugin does not enumerate system fonts.
+        for name in ('msyh.ttc', 'msyhbd.ttc'):
+            font = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts' / name
+            if font.exists():
+                QFontDatabase.addApplicationFont(str(font))
+        cls.app.setStyle('Fusion')
+        cls.app.setStyleSheet((ROOT / 'studio/theme.qss').read_text(encoding='utf-8'))
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'studio.json'
+        self.window = StudioWindow(ROOT, demo=True, state_path=self.path)
+        self.window.show()
+        self.app.processEvents()
+
+    def tearDown(self):
+        self.window.close()
+        self.app.processEvents()
+        self.temp.cleanup()
+
+    def test_chat_toggle_keeps_history_and_restores_width(self):
+        w = self.window
+        message = {'name': '观众', 'text': '固定聊天列表'}
+        w.tiles[0].history.append(message)
+        w.select_tile(0)
+        width = w.chat_panel.width()
+        original_video_width = w.video_area.width()
+        w.chat_toggle.click()
+        self.app.processEvents()
+        self.assertFalse(w.chat_panel.isVisible())
+        self.assertGreater(w.video_area.width(), original_video_width)
+        w.chat_toggle.click()
+        self.app.processEvents()
+        self.assertTrue(w.chat_panel.isVisible())
+        self.assertIn('固定聊天列表', w.chat_view.toPlainText())
+        self.assertLess(abs(w.chat_panel.width() - width), 20)
+
+    def test_independent_panels_and_chat_switch(self):
+        w = self.window
+        w.tiles[0].history.append({'name': 'A', 'text': '房间一'})
+        w.tiles[1].history.append({'name': 'B', 'text': '房间二'})
+        w.select_tile(1)
+        self.assertIn('房间二', w.chat_view.toPlainText())
+        self.assertNotIn('房间一', w.chat_view.toPlainText())
+        w.library_toggle.click()
+        w.controls_toggle.click()
+        self.assertFalse(w.library.isVisible())
+        self.assertFalse(w.global_controls.isVisible())
+        self.assertTrue(w.chat_panel.isVisible())
+        self.assertFalse(w.tiles[0].controls.isVisible())
+        w.controls_toggle.click()
+        self.assertTrue(w.tiles[0].controls.isVisible())
+
+    def test_search_selection_and_stale_response(self):
+        dialog = SearchDialog({}, 0, 4, self.window)
+        dialog.ticket = 2
+        room = {'id': '123', 'name': '匹配主播', 'title': '游戏', 'live': True}
+        dialog.show_results(1, {'rooms': [room], 'more': False})
+        self.assertEqual(dialog.results.count(), 0)
+        dialog.show_results(2, {'rooms': [room], 'more': True})
+        self.assertEqual(dialog.results.count(), 1)
+        self.assertFalse(dialog.add_button.isEnabled())
+        dialog.results.item(0).setCheckState(Qt.Checked)
+        self.assertTrue(dialog.add_button.isEnabled())
+        added = []
+        dialog.rooms_added.connect(lambda rooms, target: added.append((rooms, target)))
+        dialog.add_selected()
+        self.assertEqual(added[0], ([room], 0))
+
+    def test_settings_and_cleared_slots_persist(self):
+        w = self.window
+        w.demo = False
+        w.chat_toggle.setChecked(False)
+        w.chat_font.setValue(17)
+        w.library_toggle.setChecked(False)
+        w.save()
+        saved = load_state(self.path)
+        self.assertFalse(saved['chat_visible'])
+        self.assertFalse(saved['library_visible'])
+        self.assertEqual(saved['chat_font'], 17)
+        self.assertEqual(saved['slots'], [None] * 9)
+
+    def test_hidden_players_suspend_and_focus_returns(self):
+        w = self.window
+        w.focus_tile(2)
+        self.assertFalse(w.tiles[2].suspended)
+        self.assertTrue(w.tiles[0].suspended)
+        w.exit_focus()
+        self.assertFalse(w.tiles[0].suspended)
+        self.assertTrue(w.tiles[4].suspended)
+
+    def test_chat_font_is_not_overridden_by_global_theme(self):
+        self.window.chat_font.setValue(21)
+        self.app.processEvents()
+        self.assertEqual(self.window.chat_view.font().pixelSize(), 21)
+
+    def test_stale_stream_cannot_replace_cleared_room(self):
+        tile = self.window.tiles[0]
+        tile.generation = 10
+        tile.room = {'id': '1', 'name': '旧房间'}
+        tile.clear()
+        tile.got_stream(10, {'room': {'id': '2', 'name': '过期结果'}, 'url': None})
+        self.assertIsNone(tile.room)
+
+    def test_close_button_notifies_and_clears_chat(self):
+        tile = self.window.tiles[0]
+        tile.room = {'id': '1', 'name': '主播'}
+        tile.history.append({'name': '观众', 'text': '旧消息'})
+        self.window.select_tile(0)
+        changed = []
+        tile.changed.connect(lambda: changed.append(True))
+        tile.remove.click()
+        self.assertTrue(changed)
+        self.assertIsNone(tile.room)
+        self.assertEqual(self.window.chat_view.toPlainText(), '')
+
+    def test_preview(self):
+        w = self.window
+        w.rooms = {str(i): {'id': str(i), 'name': name, 'title': '预览内容', 'live': i != 3}
+                   for i, name in enumerate(['OA-LEAVE7', 'OA-Guxue8', 'OA-SHY', '收藏的直播间'], 1)}
+        w.refresh_library()
+        for tile, room in zip(w.tiles, w.rooms.values()):
+            tile.room = room
+            tile.name.setText(f'{tile.index + 1:02d}   {room["name"]}')
+            tile.empty_title.setText('直播画面')
+            tile.empty_hint.setText('界面预览 · 实际运行时显示直播视频')
+        w.update_chat_choices()
+        for i in range(15):
+            w.tiles[0].history.append({'name': ['一只观众', '今天也要开心', '山间的风'][i % 3],
+                                       'text': ['这种固定聊天面板看起来舒服多了', '终于可以直接搜索主播了！', '点一下顶部「聊天」就能收起来'][i % 3],
+                                       'medal': '观众牌' if i % 2 else '', 'level': '21'})
+        w.select_tile(0)
+        w.notice.setText('界面预览 · 示例聊天数据，不代表真实直播内容')
+        self.app.processEvents()
+        output = ROOT / '.qa'
+        output.mkdir(exist_ok=True)
+        self.assertTrue(w.grab().save(str(output / 'studio-preview.png')))
+        w.chat_toggle.click()
+        self.app.processEvents()
+        self.assertTrue(w.grab().save(str(output / 'studio-chat-hidden.png')))
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

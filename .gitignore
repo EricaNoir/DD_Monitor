@@ -22,3 +22,11 @@ config.json
 # VLC bin
 plugins/
 *.dll
+
+# Studio local environment and private state
+.venv/
+user-data/
+.qa/
+*.local.log
+
+runtime/
