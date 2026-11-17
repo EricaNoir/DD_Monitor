@@ -1,8 +1,9 @@
 from collections import deque
-from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool
+from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool, QMimeData
+from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                                QSlider, QStackedWidget, QSplitter, QMenu, QWidgetAction,
-                               QSizePolicy, QStylePainter, QStyleOptionButton, QStyle)
+                               QSizePolicy, QStylePainter, QStyleOptionButton, QStyle, QApplication)
 from .chat import ChatView
 from .services import BiliAPI, Job, ChatWorker
 from .icons import decorate, icon
@@ -10,10 +11,32 @@ from .widgets import BelowComboBox as QComboBox
 
 
 class RoomTitle(QPushButton):
+    drag_requested = Signal()
+
     def __init__(self, text):
         super().__init__(text)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.setMinimumWidth(64)
+        self.drag_start = None
+        self.setCursor(Qt.OpenHandCursor)
+
+    def mousePressEvent(self, event):
+        self.drag_start = event.position().toPoint() if event.button() == Qt.LeftButton else None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self.drag_start is not None and event.buttons() & Qt.LeftButton
+                and (event.position().toPoint() - self.drag_start).manhattanLength() >= QApplication.startDragDistance()):
+            self.drag_start = None
+            self.setDown(False)
+            self.drag_requested.emit()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.drag_start = None
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
         painter = QStylePainter(self)
@@ -25,6 +48,7 @@ class RoomTitle(QPushButton):
 
 class PlayerTile(QFrame):
     selected = Signal(int)
+    swap_requested = Signal(int, int)
     add_requested = Signal(int)
     chat_requested = Signal(int)
     focus_requested = Signal(int)
@@ -62,12 +86,13 @@ class PlayerTile(QFrame):
         self.name = RoomTitle(f'{index + 1:02d}   选择一个直播间')
         self.name.setObjectName('Ghost')
         self.name.setStyleSheet('text-align: left; border: 0; font-weight: 600;')
-        self.name.clicked.connect(lambda: self.selected.emit(index))
+        self.name.clicked.connect(lambda: self.selected.emit(self.index))
+        self.name.drag_requested.connect(self.start_tile_drag)
         header.addWidget(self.name, 1)
         self.status_light = QLabel('•')
         self.status_light.setFixedWidth(10)
         header.addWidget(self.status_light)
-        for label, tooltip, callback in [('放大', '聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(index))]:
+        for label, tooltip, callback in [('放大', '聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(self.index))]:
             button = QPushButton(label)
             button.setToolTip(tooltip)
             button.setFixedHeight(30)
@@ -103,7 +128,7 @@ class PlayerTile(QFrame):
         empty_layout.addWidget(self.empty_hint)
         self.empty_add = QPushButton('＋ 添加直播间')
         self.empty_add.setObjectName('Primary')
-        self.empty_add.clicked.connect(lambda: self.add_requested.emit(index))
+        self.empty_add.clicked.connect(lambda: self.add_requested.emit(self.index))
         empty_layout.addWidget(self.empty_add, alignment=Qt.AlignCenter)
         empty_layout.addStretch()
         self.stack.addWidget(self.empty)
@@ -171,7 +196,7 @@ class PlayerTile(QFrame):
         controls.addWidget(self.volume, 1)
         self.solo = QPushButton('独听')
         self.solo.setToolTip('只听这个直播间')
-        self.solo.clicked.connect(lambda: self.solo_requested.emit(index))
+        self.solo.clicked.connect(lambda: self.solo_requested.emit(self.index))
         decorate(self.solo, 'headphones', '只听这个直播间')
         controls.addWidget(self.solo)
         self.quality = QComboBox()
@@ -207,7 +232,7 @@ class PlayerTile(QFrame):
         volume_action = QWidgetAction(self.more_menu)
         volume_action.setDefaultWidget(volume_widget)
         self.more_menu.addAction(volume_action)
-        self.solo_action = self.more_menu.addAction('只听这个直播间', lambda: self.solo_requested.emit(index))
+        self.solo_action = self.more_menu.addAction('只听这个直播间', lambda: self.solo_requested.emit(self.index))
         self.retry_action = self.more_menu.addAction('重新连接', lambda: self.reload(reconnect_chat=True))
         self.more.setMenu(self.more_menu)
         header.insertWidget(header.indexOf(self.chat_toggle), self.more)
@@ -305,6 +330,9 @@ class PlayerTile(QFrame):
             if self.room.get('title'):
                 title += ' · ' + self.room['title']
             self.name.setText(title)
+        else:
+            self.name.setText(f'{self.index + 1:02d}   选择一个直播间')
+            self.empty_title.setText(f'画面 {self.index + 1:02d}')
 
     def reload(self, reconnect_chat=False):
         if not self.room:
@@ -437,11 +465,35 @@ class PlayerTile(QFrame):
             self.player.release()
             self.player = None
 
+    def start_tile_drag(self):
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData('application/x-dd-tile', str(self.index).encode('ascii'))
+        drag.setMimeData(mime)
+        drag.setPixmap(self.name.grab().scaledToWidth(min(360, self.name.width()), Qt.SmoothTransformation))
+        drag.exec(Qt.MoveAction)
+
+    def accepts_tile_drag(self, event):
+        source = event.source()
+        return (isinstance(source, PlayerTile) and source is not self
+                and source.window() is self.window() and source.isVisible() and self.isVisible())
+
     def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat('application/x-dd-room'):
+        if event.mimeData().hasFormat('application/x-dd-tile'):
+            if self.accepts_tile_drag(event):
+                event.acceptProposedAction()
+        elif event.mimeData().hasFormat('application/x-dd-room'):
             event.acceptProposedAction()
 
+    def dragMoveEvent(self, event):
+        self.dragEnterEvent(event)
+
     def dropEvent(self, event):
+        if event.mimeData().hasFormat('application/x-dd-tile'):
+            if self.accepts_tile_drag(event):
+                self.swap_requested.emit(event.source().index, self.index)
+                event.acceptProposedAction()
+            return
         import json
         try:
             room = json.loads(bytes(event.mimeData().data('application/x-dd-room')))

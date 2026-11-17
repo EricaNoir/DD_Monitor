@@ -382,6 +382,7 @@ class StudioWindow(QMainWindow):
         self.tiles = [PlayerTile(index, instance, self.cookies, self) for index in range(9)]
         for tile in self.tiles:
             tile.selected.connect(self.select_tile)
+            tile.swap_requested.connect(self.swap_tiles)
             tile.add_requested.connect(self.open_search)
             tile.focus_requested.connect(self.focus_tile)
             tile.solo_requested.connect(self.solo_tile)
@@ -458,7 +459,7 @@ class StudioWindow(QMainWindow):
         box.setContentsMargins(20, 18, 20, 18)
         box.setSpacing(14)
         box.addWidget(label('操作指引', 'Heading'))
-        guide = label('点击头像：优先填入空白窗口，已打开则定位\n窗口已满时点击不会替换；拖拽可指定窗口\n拖动视频与聊天之间的分隔线调整栏宽\n悬停图标查看功能，点主播名选择当前画面\n\nCtrl+K   添加直播间\nCtrl+B   展开 / 收起头像侧栏\nCtrl+J    显示 / 收起所有弹幕\nF11       全屏\nEsc       退出全屏或单画面聚焦')
+        guide = label('点击头像：优先填入空白窗口，已打开则定位\n窗口已满时点击不会替换；拖拽可指定窗口\n拖动窗口顶部主播名称栏到另一窗口：交换位置\n拖动视频与聊天之间的分隔线调整栏宽\n悬停图标查看功能\n\nCtrl+K   添加直播间\nCtrl+B   展开 / 收起头像侧栏\nCtrl+J    显示 / 收起所有弹幕\nF11       全屏\nEsc       退出全屏或单画面聚焦')
         box.addWidget(guide)
         self.notice = label('')
         self.notice.setWordWrap(True)
@@ -699,6 +700,18 @@ class StudioWindow(QMainWindow):
             tile.suspend(tile.index not in indices)
             tile.focus_button.setIcon(icon('collapse' if self.focused == tile.index else 'expand'))
             tile.focus_button.setToolTip('返回多屏' if self.focused == tile.index else '放大这个画面')
+
+    def swap_tiles(self, source, target):
+        if self.focused is not None or source == target or not (0 <= source < self.count and 0 <= target < self.count):
+            return
+        active_tile = self.tiles[self.active]
+        self.tiles[source], self.tiles[target] = self.tiles[target], self.tiles[source]
+        for index in (source, target):
+            self.tiles[index].index = index
+            self.tiles[index].update_title()
+        self.arrange()
+        self.select_tile(active_tile.index)
+        self.save()
 
     def focus_tile(self, index):
         self.focused = None if self.focused == index else index

@@ -65,6 +65,7 @@ class DataTests(unittest.TestCase):
         markup = message_html({'name':'观众','text':'消息','medal':'粉丝牌','level':'21'})
         self.assertIn('font-style:italic', markup)
         self.assertNotIn('background-color', markup)
+        self.assertIn('粉丝牌 21</span>', markup)
 
 
 class UITests(unittest.TestCase):
@@ -335,6 +336,75 @@ class UITests(unittest.TestCase):
         w.tiles[0].dropEvent(event)
         w.tiles[0].set_room.assert_called_once_with(room)
         self.assertNotIn('点击',w.room_list.item(0).toolTip())
+
+    def test_tile_drop_swaps_live_widgets_and_persists_order(self):
+        w = self.window
+        a, b = w.tiles[0], w.tiles[3]
+        for tile, rid in ((a, '101'), (b, '102')):
+            tile.room = {'id': rid, 'name': rid, 'title': '标题'}
+            w.rooms[rid] = tile.room
+            tile.update_title()
+            tile.receive_chat(None, {'name': rid, 'text': '聊天记录' + rid})
+        a.volume.setValue(17)
+        a.paused = True
+        a.chat_toggle.setChecked(False)
+        handle = int(a.surface.winId())
+        w.select_tile(0)
+        w.demo = False
+        mime = QMimeData()
+        mime.setData('application/x-dd-tile', b'0')
+        event = SimpleNamespace(mimeData=lambda: mime, source=lambda: a, acceptProposedAction=Mock())
+        with patch.object(a, 'reload') as reload_a, patch.object(b, 'reload') as reload_b:
+            b.dropEvent(event)
+            reload_a.assert_not_called()
+            reload_b.assert_not_called()
+        event.acceptProposedAction.assert_called_once()
+        self.assertIs(w.tiles[3], a)
+        self.assertIs(w.tiles[0], b)
+        self.assertEqual((a.index, b.index, w.active), (3, 0, 3))
+        self.assertEqual(int(a.surface.winId()), handle)
+        self.assertEqual(a.volume.value(), 17)
+        self.assertTrue(a.paused)
+        self.assertFalse(a.chat_toggle.isChecked())
+        self.assertIn('聊天记录101', a.chat_view.toPlainText())
+        self.assertIn('聊天记录102', b.chat_view.toPlainText())
+        self.assertTrue(a.name.text().startswith('04'))
+        saved = load_state(self.path)
+        self.assertEqual(saved['slots'][:4], ['102', None, None, '101'])
+        self.assertEqual(saved['slot_settings']['3']['volume'], 17)
+        b.name.click()
+        self.assertEqual(w.active, 0)
+        a.solo.click()
+        self.assertEqual(w.active, 3)
+        self.assertFalse(a.muted)
+        self.assertTrue(b.muted)
+        w.swap_tiles(3, 1)
+        self.assertIs(w.tiles[1], a)
+        self.assertIsNone(w.tiles[3].room)
+        self.assertTrue(w.tiles[3].name.text().startswith('04'))
+        unchanged = list(w.tiles)
+        w.swap_tiles(0, 8)
+        self.assertEqual(w.tiles, unchanged)
+
+    def test_title_drag_threshold_and_source_validation(self):
+        w = self.window
+        tile = w.tiles[0]
+        with patch('studio.player.QDrag') as drag_type:
+            QTest.mousePress(tile.name, Qt.LeftButton, pos=QPoint(10, 10))
+            QTest.mouseMove(tile.name, QPoint(12, 10))
+            drag_type.assert_not_called()
+            QTest.mouseMove(tile.name, QPoint(60, 10))
+            QTest.mouseRelease(tile.name, Qt.LeftButton, pos=QPoint(60, 10))
+            drag_type.assert_called_once_with(tile)
+            drag_type.return_value.exec.assert_called_once_with(Qt.MoveAction)
+            mime = drag_type.return_value.setMimeData.call_args.args[0]
+            self.assertTrue(mime.hasFormat('application/x-dd-tile'))
+        mime = QMimeData()
+        mime.setData('application/x-dd-tile', b'0')
+        for source in (None, tile, w.tiles[8]):
+            event = SimpleNamespace(mimeData=lambda: mime, source=lambda: source, acceptProposedAction=Mock())
+            tile.dropEvent(event)
+            event.acceptProposedAction.assert_not_called()
 
     def test_favorite_star_and_quick_selection_persist(self):
         w = self.window
