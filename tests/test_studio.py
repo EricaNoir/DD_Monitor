@@ -98,7 +98,8 @@ class UITests(unittest.TestCase):
         self.assertTrue(b.chat_panel.isVisible())
         w.library_toggle.click()
         w.controls_toggle.click()
-        self.assertFalse(w.library.isVisible())
+        self.assertTrue(w.library.isVisible())
+        self.assertLessEqual(w.library.width(), 56)
         self.assertFalse(w.global_controls.isVisible())
         self.assertTrue(b.chat_panel.isVisible())
         self.assertFalse(a.controls.isVisible())
@@ -179,10 +180,54 @@ class UITests(unittest.TestCase):
         self.window.select_tile(0)
         changed = []
         tile.changed.connect(lambda: changed.append(True))
+        self.window.controls_toggle.setChecked(False)
+        self.app.processEvents()
+        self.assertTrue(tile.remove.isVisible())
+        self.assertLess(tile.remove.y(), tile.content_splitter.y())
+        self.assertGreater(tile.remove.x(), tile.width() - 60)
         tile.remove.click()
         self.assertTrue(changed)
         self.assertIsNone(tile.room)
         self.assertEqual(tile.chat_view.toPlainText(), '')
+
+    def test_avatar_rail_can_restore_sidebar_and_focus_without_reload(self):
+        w = self.window
+        room = {'id': '123', 'name': '测试主播', 'live': True, 'title': '直播标题'}
+        w.rooms = {'123': room}
+        w.tiles[1].room = room
+        w.refresh_library()
+        width = w.library.width()
+        w.library_filter.setText('无匹配')
+        self.assertEqual(w.room_list.count(), 0)
+        w.library_toggle.click()
+        self.app.processEvents()
+        self.assertTrue(w.library.isVisible())
+        self.assertEqual(w.room_list.count(), 1)
+        self.assertTrue(w.library_toggle.isVisible() and w.library_add.isVisible())
+        self.assertLess(w.library_toggle.x(), 60)
+        self.assertLessEqual(w.library.width(), 56)
+        self.assertIn('测试主播', w.room_list.item(0).toolTip())
+        generation = w.tiles[1].generation
+        w.room_list.itemClicked.emit(w.room_list.item(0))
+        self.assertEqual(w.active, 1)
+        self.assertEqual(w.tiles[1].generation, generation)
+        w.library_toggle.click()
+        self.app.processEvents()
+        self.assertLess(abs(w.library.width() - width), 20)
+        self.assertEqual(w.library_filter.text(), '无匹配')
+
+    def test_collapsed_sidebar_persists_as_avatar_rail(self):
+        w = self.window
+        w.demo = False
+        w.library_toggle.setChecked(False)
+        w.save()
+        again = StudioWindow(ROOT, demo=True, state_path=self.path)
+        again.show()
+        self.app.processEvents()
+        self.assertTrue(again.library.isVisible())
+        self.assertLessEqual(again.library.width(), 56)
+        self.assertTrue(again.library_toggle.isVisible())
+        again.close()
 
     def test_preview(self):
         w = self.window

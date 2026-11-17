@@ -25,6 +25,9 @@ QFrame#VideoTile { background: #202020; border: 1px solid #3b3b3b; border-radius
 QFrame#VideoTile[active="true"] { border: 1px solid #777777; }
 QFrame#Surface { background: #0d0d0d; border: 0; }
 QFrame#Library { background: #202020; border: 0; }
+QPushButton#SidebarAdd { border-top: 1px solid #3b3b3b; border-radius: 0; text-align: left; padding-left: 16px; }
+QPushButton#ClosePlayer { color: #999999; font-size: 18px; padding: 0; }
+QPushButton#ClosePlayer:hover { color: white; background: #653333; }
 QFrame#RoomChat { background: #232323; border: 0; border-left: 1px solid #353535; }
 QTextBrowser { background: #232323; border: 0; padding: 4px; selection-background-color: #515151; }
 QSplitter::handle { background: #272727; }

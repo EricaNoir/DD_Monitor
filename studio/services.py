@@ -75,7 +75,7 @@ class BiliAPI:
             rooms.append({'id': str(rid), 'name': plain(item.get('uname')),
                           'title': plain(item.get('title') or item.get('cate_name')),
                           'live': bool(item.get('is_live') or item.get('live_status') == 1),
-                          'uid': item.get('uid', 0)})
+                          'uid': item.get('uid', 0), 'face': safe_image(item.get('uface') or item.get('face') or '')})
         return {'rooms': rooms, 'more': page < int(data.get('numPages', 1))}
 
     def room(self, rid):
@@ -84,7 +84,7 @@ class BiliAPI:
                           roomid=info['room_id']).get('info', {})
         return {'id': str(info['room_id']), 'name': anchor.get('uname') or f"房间 {rid}",
                 'title': info.get('title', ''), 'live': info.get('live_status') == 1,
-                'uid': info.get('uid', 0)}
+                'uid': info.get('uid', 0), 'face': safe_image(anchor.get('face', ''))}
 
     def stream(self, rid, quality=400):
         room = self.room(rid)
