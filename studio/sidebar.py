@@ -1,5 +1,5 @@
 from .theme import COLORS, SIZES, horizontal_scrollbar_style
-"""A persistent avatar rail that expands into the room library."""
+"""A fixed avatar rail for favorite rooms."""
 import hashlib
 import json
 from collections import deque
@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData, QEvent
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPixmap, QDrag, QPen
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PySide6.QtWidgets import QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip, QMenu
+from PySide6.QtWidgets import QApplication, QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip, QMenu
 from .icons import icon, paint_icon
 from .runtime import configure_qt_tls
 from .services import safe_image
@@ -80,14 +80,15 @@ class RoomDelegate(QStyledItemDelegate):
         view = self.parent()
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
-        area = QRectF(option.rect).adjusted(2, 2, -2, -2)
+        area = QRectF(option.rect).adjusted(4, 4, -4, -4)
         current = room.get('id') in view.visible_rooms
         hovered = bool(option.state & QStyle.State_MouseOver)
         if current or hovered:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(COLORS['selected'] if current else COLORS['field']))
             painter.drawRoundedRect(area, 7, 7)
-        avatar = QRectF(option.rect.left() + 7, option.rect.top() + 8, 26, 26)
+        avatar = QRectF(0, 0, 26, 26)
+        avatar.moveCenter(QRectF(option.rect).center())
         clip = QPainterPath()
         clip.addEllipse(avatar)
         painter.save()
@@ -106,15 +107,10 @@ class RoomDelegate(QStyledItemDelegate):
         painter.setPen(QPen(QColor(COLORS['surface']), 2))
         painter.setBrush(QColor(COLORS['live'] if room.get('live') else COLORS['offline']))
         painter.drawEllipse(QRectF(avatar.right() - 6, avatar.bottom() - 6, 8, 8))
-        if not view.collapsed:
-            painter.setPen(QColor(COLORS['text']))
-            text_rect = option.rect.adjusted(48, 0, -9, 0)
-            text = option.fontMetrics.elidedText(room.get('name', ''), Qt.ElideRight, text_rect.width())
-            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
         painter.restore()
 
     def sizeHint(self, option, index):
-        return QSize(38, 42)
+        return QSize(SIZES['rail'], SIZES['rail'])
 
 
 class RoomList(QListWidget):
@@ -123,16 +119,21 @@ class RoomList(QListWidget):
     def __init__(self, avatars):
         super().__init__()
         self.avatars = avatars
-        self.collapsed = False
+        self.collapsed = True
+        self.drag_start = None
+        self.drag_room = None
+        self.dragged = False
+        self.setObjectName('AvatarRail')
         self.active_room = None
         self.visible_rooms = set()
         self.setSelectionMode(QAbstractItemView.NoSelection)
         self.setItemDelegate(RoomDelegate(self))
-        self.setDragEnabled(True)
+        self.setDragEnabled(False)  # Explicit dragging works with NoSelection.
         self.setMouseTracking(True)
         self.setSpacing(0)
         self.setMinimumWidth(38)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         avatars.changed.connect(self.viewport().update)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -154,29 +155,49 @@ class RoomList(QListWidget):
         self.context_menu.popup(self.viewport().mapToGlobal(point))
 
     def mousePressEvent(self, event):
+        self.dragged = False
+        self.drag_start = None
+        self.drag_room = None
         if event.button() == Qt.RightButton:
             item = self.itemAt(event.position().toPoint())
             if item:
                 self.setCurrentItem(item)
             event.accept()
             return
+        if event.button() == Qt.LeftButton:
+            item = self.itemAt(event.position().toPoint())
+            if item:
+                self.drag_start = event.position().toPoint()
+                self.drag_room = dict(item.data(Qt.UserRole))
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        if (self.drag_start is not None and event.buttons() & Qt.LeftButton
+                and (event.position().toPoint() - self.drag_start).manhattanLength() >= QApplication.startDragDistance()):
+            self.dragged = True
+            self.drag_start = None
+            self.startDrag(Qt.CopyAction)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
     def mouseReleaseEvent(self, event):
+        self.drag_start = None
+        if self.dragged:
+            self.dragged = False
+            self.drag_room = None
+            event.accept()
+            return
         if event.button() == Qt.RightButton:
             event.accept()
             return
         super().mouseReleaseEvent(event)
 
-    def set_collapsed(self, value):
-        self.collapsed = value
-        self.viewport().update()
-
     def startDrag(self, supported_actions):
-        item = self.currentItem()
-        if item:
+        room = self.drag_room
+        if room:
             mime = QMimeData()
-            mime.setData('application/x-dd-room', json.dumps(item.data(Qt.UserRole)).encode())
+            mime.setData('application/x-dd-room', json.dumps(room).encode())
             drag = QDrag(self)
             drag.setMimeData(mime)
             drag.exec(Qt.CopyAction)

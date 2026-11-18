@@ -143,14 +143,11 @@ class StudioWindow(QMainWindow):
         header = QHBoxLayout(header_frame)
         header.setContentsMargins(5, SIZES['gap'], 12, SIZES['gap'])
         header.setSpacing(SIZES['gap'])
-        self.library_toggle = button('', checkable=True)
-        self.library_toggle.setFixedSize(32, 32)
-        decorate(self.library_toggle, 'sidebar', '展开或收起主播侧栏', 32)
-        self.library_toggle.setAccessibleName('展开或收起主播侧栏')
-        header.addWidget(self.library_toggle)
-        header.addWidget(label('DD Monitor', 'Brand'))
-        self.account = button('已读取本机登录' if self.cookies else '登录 Bilibili', self.login)
-        decorate(self.account, 'user', '已登录，点击重新扫码' if self.cookies else '登录 Bilibili', 32)
+        self.account_ticket = 0
+        self.account = button('正在检查登录…' if self.cookies.get('SESSDATA') else '未登录 · 点击登录', self.login)
+        self.account.setIcon(icon('user'))
+        self.account.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
+        self.account.setToolTip('查看当前登录状态，点击扫码登录或切换账号')
         header.addWidget(self.account)
         header.addStretch()
         self.layout_choice = QComboBox()
@@ -173,11 +170,7 @@ class StudioWindow(QMainWindow):
         header.addWidget(self.info_button)
         outer.addWidget(header_frame)
 
-        self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.setHandleWidth(5)
-        self.splitter.setChildrenCollapsible(False)
         self.library = self.build_library()
-        self.splitter.addWidget(self.library)
         self.video_area = QWidget()
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
@@ -200,14 +193,14 @@ class StudioWindow(QMainWindow):
             tile.chat_tabs.setCurrentIndex(max(0, min(3, int(saved.get('chat_filter', 0)))))
             tile.chat_toggle.setChecked(saved.get('chat_visible', self.state['chat_visible']))
             tile.toggle_chat(tile.chat_toggle.isChecked())
-        self.splitter.addWidget(self.video_area)
         self.chat_settings = self.build_chat_settings()
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 1)
-        content = QHBoxLayout()
+        self.content = QWidget()
+        content = QHBoxLayout(self.content)
         content.setContentsMargins(0, SIZES['gap'], SIZES['gap'], SIZES['gap'])
-        content.addWidget(self.splitter)
-        outer.addLayout(content, 1)
+        content.setSpacing(0)
+        content.addWidget(self.library)
+        content.addWidget(self.video_area, 1)
+        outer.addWidget(self.content, 1)
 
         self.global_controls = QFrame()
         self.global_controls.setFixedWidth(208)
@@ -231,20 +224,13 @@ class StudioWindow(QMainWindow):
         self.help_dialog = self.build_help()
 
         self.controls_toggle.toggled.connect(self.toggle_controls)
-        self.library_toggle.setChecked(bool(self.state['library_visible']))
         self.controls_toggle.setChecked(bool(self.state['controls_visible']))
         self.chat_toggle.setChecked(any(t.chat_toggle.isChecked() for t in self.tiles))
         self.chat_toggle.toggled.connect(self.toggle_chat)
         self.toggle_controls(self.controls_toggle.isChecked())
-        self.splitter.splitterMoved.connect(lambda *_: self.save())
-        sizes = self.state['splitter']
-        self.splitter.setSizes([sizes[0], sum(sizes[1:])])
-        self.library_width = max(195, self.state['splitter'][0])
-        self.library_toggle.toggled.connect(self.toggle_library)
-        self.toggle_library(self.library_toggle.isChecked())
         self.shortcuts = []
         for keys, callback in [('Ctrl+K', lambda: self.open_search(self.active)), ('Ctrl+J', self.chat_toggle.click),
-                               ('Ctrl+B', self.library_toggle.click), ('F11', self.toggle_fullscreen),
+                               ('F11', self.toggle_fullscreen),
                                ('Escape', self.exit_focus)]:
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.activated.connect(callback)
@@ -253,9 +239,20 @@ class StudioWindow(QMainWindow):
         self.arrange()
         self.ready = True
         self.select_tile(0)
+        self.favorite_poll_pending = False
+        self.favorite_timer = QTimer(self)
+        self.favorite_timer.setInterval(30000)
+        self.favorite_timer.timeout.connect(self.refresh_favorite_status)
+        self.account_timer = QTimer(self)
+        self.account_timer.setInterval(300000)
+        self.account_timer.timeout.connect(self.refresh_account_status)
         if not demo:
             QTimer.singleShot(100, self.restore_rooms)
             QTimer.singleShot(250, self.hydrate_avatars)
+            QTimer.singleShot(0, self.refresh_account_status)
+            QTimer.singleShot(500, self.refresh_favorite_status)
+            self.favorite_timer.start()
+            self.account_timer.start()
 
     def build_help(self):
         dialog = QDialog(self, Qt.Popup)
@@ -264,7 +261,7 @@ class StudioWindow(QMainWindow):
         box.setContentsMargins(20, 18, 20, 18)
         box.setSpacing(14)
         box.addWidget(label('操作指引', 'Heading'))
-        guide = label('点击头像：优先填入空白窗口，已打开则定位\n窗口已满时点击不会替换；拖拽可指定窗口\n拖动窗口顶部主播名称栏到另一窗口：交换位置\n拖动视频与聊天之间的分隔线调整栏宽\n悬停图标查看功能\n\nCtrl+K   添加直播间\nCtrl+B   展开 / 收起头像侧栏\nCtrl+J    显示 / 收起所有弹幕\nF11       全屏\nEsc       退出全屏或单画面聚焦')
+        guide = label('点击头像：优先填入空白窗口，已打开则定位\n窗口已满时点击不会替换；拖拽可指定窗口\n拖动窗口顶部主播名称栏到另一窗口：交换位置\n拖动视频与聊天之间的分隔线调整栏宽\n悬停图标查看功能\n\nCtrl+K   添加直播间\nCtrl+J    显示 / 收起所有弹幕\nF11       全屏\nEsc       退出全屏或单画面聚焦')
         box.addWidget(guide)
         self.notice = label('')
         self.notice.setWordWrap(True)
@@ -280,32 +277,18 @@ class StudioWindow(QMainWindow):
     def build_library(self):
         frame = QFrame()
         frame.setObjectName('Library')
-        frame.setMinimumWidth(195)
-        frame.setMaximumWidth(420)
+        frame.setFixedWidth(SIZES['rail'])
         box = QVBoxLayout(frame)
-        box.setContentsMargins(0, 8, 0, 8)
-        box.setSpacing(8)
-        self.library_heading = label('直播间', 'Heading')
-        self.library_heading.setContentsMargins(12, 4, 12, 4)
-        box.addWidget(self.library_heading)
-        self.library_filter = QLineEdit()
-        self.library_filter.setPlaceholderText('搜索已添加的主播')
-        self.library_filter.textChanged.connect(self.refresh_library)
-        box.addWidget(self.library_filter)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
         self.room_list = RoomList(self.avatars)
         self.room_list.remove_requested.connect(lambda room: self.set_favorite(room, False))
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list, 1)
-        self.library_empty = label('还没有直播间\n点下方 + 添加主播')
-        self.library_empty.setAlignment(Qt.AlignCenter)
-        self.library_empty.setWordWrap(True)
-        box.addWidget(self.library_empty)
-        self.library_play = button('播放到当前画面', lambda: self.play_library(self.room_list.currentItem()))
-        box.addWidget(self.library_play)
-        self.library_remove = button('移出主播库', self.remove_library)
-        box.addWidget(self.library_remove)
-        self.library_add = button('添加直播间', lambda: self.open_search(self.active))
+        self.library_add = button('', lambda: self.open_search(self.active))
+        self.library_add.setIcon(icon('add'))
+        self.library_add.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
         self.library_add.setObjectName('SidebarAdd')
         self.library_add.setMinimumHeight(36)
         self.library_add.setToolTip('添加直播间  Ctrl+K')
@@ -355,21 +338,17 @@ class StudioWindow(QMainWindow):
         current = self.room_list.currentItem()
         selected_id = current.data(Qt.UserRole)['id'] if current else None
         self.room_list.clear()
-        query = self.library_filter.text().strip().casefold() if self.library_toggle.isChecked() else ''
         for room in sorted(self.rooms.values(), key=lambda room: not room.get('live', False)):
             if room['id'] not in self.favorites:
-                continue
-            if query and query not in (room['name'] + ' ' + room['id']).casefold():
                 continue
             state = '● 直播中' if room.get('live') else '○ 未开播'
             item = QListWidgetItem(room['name'])
             item.setToolTip(f'{room["name"]} · {state}\n{room.get("title", "")}')
             item.setData(Qt.UserRole, room)
-            item.setSizeHint(QSize(48, 44))
+            item.setSizeHint(QSize(SIZES['rail'], SIZES['rail']))
             self.room_list.addItem(item)
             if room['id'] == selected_id:
                 self.room_list.setCurrentItem(item)
-        self.library_empty.setVisible(not self.favorites and self.library_toggle.isChecked())
         self.sync_sidebar_visible()
 
     def hydrate_avatars(self):
@@ -557,30 +536,6 @@ class StudioWindow(QMainWindow):
             tile.chat_toggle.setChecked(shown)
         self.save()
 
-    def toggle_library(self, shown):
-        sizes = self.splitter.sizes()
-        if not shown and self.library.width() > 60:
-            self.library_width = max(195, sizes[0])
-        for widget in (self.library_heading, self.library_filter, self.library_play, self.library_remove):
-            widget.setVisible(shown)
-        self.library_empty.setVisible(shown and not self.favorites)
-        self.library_add.setText('添加直播间' if shown else '')
-        self.library_add.setIcon(icon('add'))
-        self.library_add.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
-        self.library_add.setStyleSheet('' if shown else 'padding: 0; text-align: center;')
-        self.library_toggle.setToolTip(('收起到头像栏' if shown else '展开主播侧栏') + '  Ctrl+B')
-        self.room_list.set_collapsed(not shown)
-        if shown:
-            self.library.setMinimumWidth(195)
-            self.library.setMaximumWidth(420)
-            width = getattr(self, 'library_width', 235)
-        else:
-            self.library.setFixedWidth(SIZES['rail'])
-            width = 42
-        self.splitter.setSizes([width, max(400, sum(sizes) - width)])
-        self.refresh_library()
-        self.save()
-
     def toggle_controls(self, shown):
         if hasattr(self, 'global_controls'):
             self.global_controls.setVisible(shown)
@@ -640,6 +595,69 @@ class StudioWindow(QMainWindow):
             if not tile.suspended:
                 tile.reload(reconnect_chat=True)
 
+    def refresh_account_status(self):
+        self.account_ticket += 1
+        ticket = self.account_ticket
+        if not self.cookies.get('SESSDATA'):
+            self.account.setText('未登录 · 点击登录')
+            self.account.setToolTip('点击扫码登录 B 站')
+            return
+        self.account.setText('正在检查登录…')
+        api = BiliAPI(self.cookies)
+        job = Job(lambda: api.get('https://api.bilibili.com/x/web-interface/nav'))
+        job.signals.done.connect(lambda data: self.account_status_ready(ticket, data))
+        job.signals.error.connect(lambda error: self.account_status_failed(ticket, error))
+        QThreadPool.globalInstance().start(job)
+
+    def account_status_ready(self, ticket, data):
+        if self.closing or ticket != self.account_ticket:
+            return
+        if data.get('isLogin'):
+            name = str(data.get('uname') or data.get('mid') or 'B 站账号')
+            short = self.account.fontMetrics().elidedText(name, Qt.ElideRight, 170)
+            self.account.setText(f'已登录 · {short}')
+            self.account.setToolTip(f'{name}\n点击扫码切换账号')
+        else:
+            self.account.setText('登录已过期 · 重新登录')
+            self.account.setToolTip('当前登录已失效，点击重新扫码')
+
+    def account_status_failed(self, ticket, error):
+        if self.closing or ticket != self.account_ticket:
+            return
+        if '(-101)' in error:
+            self.account_status_ready(ticket, {'isLogin': False})
+        else:
+            self.account.setText('登录状态待确认')
+            self.account.setToolTip(error + '\n点击扫码登录')
+
+    def refresh_favorite_status(self):
+        if self.demo or self.closing or self.favorite_poll_pending or not self.favorites:
+            return
+        rooms = [dict(self.rooms[rid]) for rid in self.favorites if rid in self.rooms]
+        self.favorite_poll_pending = True
+        api = BiliAPI(self.cookies)
+        job = Job(lambda: api.room_statuses(rooms))
+        job.signals.done.connect(self.favorite_status_ready)
+        job.signals.error.connect(self.favorite_status_failed)
+        QThreadPool.globalInstance().start(job)
+
+    def favorite_status_failed(self, error):
+        self.favorite_poll_pending = False
+        # Keep last known states; a failed request does not mean offline.
+
+    def favorite_status_ready(self, rooms):
+        self.favorite_poll_pending = False
+        if self.closing:
+            return
+        for room in rooms:
+            if room['id'] in self.favorites and room['id'] in self.rooms:
+                self.rooms[room['id']].update(room)
+        self.refresh_library()
+        for dialog in self.dialogs:
+            if isinstance(dialog, SearchDialog) and dialog.isVisible():
+                dialog.sync_favorites(self.rooms, self.favorites)
+        self.save()
+
     def login(self):
         if any(isinstance(d, PaymentDialog) and d.busy for d in self.dialogs):
             self.notice.setText('请等送礼面板完成当前操作后再切换账号。')
@@ -652,7 +670,7 @@ class StudioWindow(QMainWindow):
     def logged_in(self, cookies):
         self.cookies = cookies
         save_json(self.root / 'user-data' / 'credentials.json', cookies)
-        decorate(self.account, 'user', '已登录，点击重新扫码', 32)
+        self.refresh_account_status()
         for tile in self.tiles:
             tile.cookies = cookies
             if tile.room:
@@ -676,16 +694,15 @@ class StudioWindow(QMainWindow):
     def save(self):
         if not self.ready or self.closing or self.demo:
             return
-        sizes = self.splitter.sizes()
-        if not self.library_toggle.isChecked():
-            sizes[0] = getattr(self, 'library_width', 235)
+        self.state.pop('splitter', None)
+        self.state.pop('library_visible', None)
         self.state.update({'rooms': list(self.rooms.values()), 'slots': [tile.room['id'] if tile.room else None for tile in self.tiles],
                           'favorites': sorted(self.favorites),
                           'layout': self.count, 'chat_visible': self.chat_toggle.isChecked(),
-                          'library_visible': self.library_toggle.isChecked(), 'controls_visible': self.controls_toggle.isChecked(),
+                          'controls_visible': self.controls_toggle.isChecked(),
                           'chat_font': self.chat_font.value(), 'chat_follow': self.follow.isChecked(),
                           'chat_names': self.show_names.isChecked(),
-                          'splitter': sizes, 'volume': self.master_volume.value(),
+                          'volume': self.master_volume.value(),
                           'slot_settings': {str(tile.index): {'volume': tile.volume.value(), 'muted': tile.muted,
                                             'quality': tile.quality.currentData(),
                                             'chat_visible': tile.chat_toggle.isChecked(),
@@ -701,6 +718,9 @@ class StudioWindow(QMainWindow):
             event.ignore()
             return
         if not self.closing:
+            self.favorite_timer.stop()
+            self.account_timer.stop()
+            self.account_ticket += 1
             self.save()
             self.closing = True
             for tile in self.tiles:

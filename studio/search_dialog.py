@@ -144,6 +144,8 @@ class SearchDialog(QDialog):
         for rid, item in existing.items():
             if rid in rooms:
                 item.setData(Qt.UserRole, dict(rooms[rid]))
+                room = rooms[rid]
+                item.setToolTip(room['name'] + (' · 直播中' if room.get('live') else ' · 未开播'))
             item.setData(Qt.UserRole + 1, rid in self.favorite_ids)
         additions = [room for rid, room in rooms.items() if rid in self.favorite_ids and rid not in existing]
         additions.sort(key=lambda room: not room.get('live', False))
@@ -160,6 +162,11 @@ class SearchDialog(QDialog):
             if room.get('live'):
                 index = next((i for i in range(self.favorite_strip.count()) if not self.favorite_strip.item(i).data(Qt.UserRole).get('live')), index)
             self.favorite_strip.insertItem(index, item)
+        ordered = sorted(self.items(self.favorite_strip), key=lambda item: not item.data(Qt.UserRole).get('live', False))
+        for index, item in enumerate(ordered):
+            current = self.favorite_strip.row(item)
+            if current != index:
+                self.favorite_strip.insertItem(index, self.favorite_strip.takeItem(current))
         self.favorite_strip.blockSignals(False)
         self.results.blockSignals(True)
         for item in self.items(self.results):

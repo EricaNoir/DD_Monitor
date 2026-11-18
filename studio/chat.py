@@ -19,7 +19,7 @@ def message_html(message, names=True):
                 f'<img src="studio-icon:gift" width="{size}" height="{size}" alt="礼物" style="vertical-align:middle;">&nbsp;{sender}{text}</p>')
     if message.get('kind') == 'sc':
         price = html.escape(str(message.get('price', '')))
-        sender = ' · ' + name if names else ''
+        sender = ' ' + name if names else ''
         return (f'<p style="margin:20px 10px;line-height:145%;">'
                 f'<span style="color:{COLORS["sc_heading"]};font-weight:600;">SC ¥{price}{sender}</span>'
                 f'<br><span style="color:{COLORS["sc_text"]};">{text.replace(chr(10), "<br>")}</span></p>')
@@ -61,11 +61,25 @@ class ChatView(QTextBrowser):
         fmt.setBottomMargin(10)
         frame.setFrameFormat(fmt)
 
+    def clear(self):
+        super().clear()
+        # Qt resets the root frame on clear, including when changing rooms.
+        self.set_document_padding()
+
     def loadResource(self, resource_type, url):
         if resource_type != QTextDocument.ImageResource:
             return super().loadResource(resource_type, url)
         if url.toString() == 'studio-icon:gift':
-            return icon_image('gift', SIZES['inline_icon'], COLORS['gift'])
+            source = icon_image('gift', SIZES['inline_icon'], COLORS['gift'])
+            aligned = QImage(source.size(), source.format())
+            aligned.setDevicePixelRatio(source.devicePixelRatio())
+            aligned.fill(Qt.transparent)
+            painter = QPainter(aligned)
+            # Rich-text middle alignment uses the font's x-height, which puts
+            # the gift below the visual center of CJK text. Correct inline only.
+            painter.drawImage(QRectF(0, -1.5, SIZES['inline_icon'], SIZES['inline_icon']), source)
+            painter.end()
+            return aligned
         address = safe_image(url.toString())
         if not address:
             return QImage()
@@ -145,12 +159,10 @@ class ChatView(QTextBrowser):
                 rect = layout.blockBoundingRect(block)
                 rect.translate(-self.horizontalScrollBar().value(), -self.verticalScrollBar().value())
                 if rect.bottom() >= 0 and rect.top() <= self.viewport().height():
-                    lines = block.layout()
-                    width = max((lines.lineAt(i).naturalTextWidth() for i in range(lines.lineCount())), default=0)
                     padding = SIZES['bubble_padding']
                     available = rect.width() + block.blockFormat().leftMargin() + block.blockFormat().rightMargin()
                     bubble = QRectF(rect.left(), rect.top() - padding,
-                                    min(available, width + 2 * padding), rect.height() + 2 * padding)
+                                    available, rect.height() + 2 * padding)
                     painter.drawRoundedRect(bubble, SIZES['bubble_radius'], SIZES['bubble_radius'])
             block = block.next()
         painter.end()

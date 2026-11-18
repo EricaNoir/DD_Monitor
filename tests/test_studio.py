@@ -22,6 +22,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DataTests(unittest.TestCase):
+    def test_favorite_status_batches_preserve_unknown_rooms(self):
+        api = BiliAPI()
+        rooms = [{'id': str(i), 'uid': i, 'name': str(i), 'live': True} for i in range(1, 53)]
+        with patch.object(api, 'get', side_effect=[{'1': {'live_status': 0}, '2': {'live_status': 1}}, {}]) as get:
+            updated = api.room_statuses(rooms)
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(len(get.call_args_list[0].kwargs['uids[]']), 50)
+        self.assertEqual([(r['id'], r['live']) for r in updated], [('1', False), ('2', True)])
+        self.assertTrue(rooms[0]['live'])
+
     def test_room_input(self):
         self.assertEqual(room_number('https://live.bilibili.com/31294374?from=feed'), '31294374')
         self.assertEqual(room_number('4792266'), '4792266')
@@ -109,6 +119,98 @@ class UITests(unittest.TestCase):
         self.assertEqual(dialog.follow_filter.height(), 32)
         self.assertEqual(dialog.input.height(), dialog.search_button.height())
         dialog.close()
+
+    def test_account_status_ignores_stale_results(self):
+        w = self.window
+        w.cookies = {}
+        w.refresh_account_status()
+        ticket = w.account_ticket
+        self.assertIn('未登录', w.account.text())
+        w.account_status_ready(ticket - 1, {'isLogin': True, 'uname': '旧账号'})
+        self.assertIn('未登录', w.account.text())
+        w.account_status_ready(ticket, {'isLogin': True, 'uname': '示例账号'})
+        self.assertIn('示例账号', w.account.text())
+        w.account_status_failed(ticket, '登录失效 (-101)')
+        self.assertIn('已过期', w.account.text())
+
+    def test_status_refresh_sorts_without_reloading_players(self):
+        w = self.window
+        w.rooms = {str(i): {'id': str(i), 'uid': i, 'name': str(i), 'live': False} for i in range(1, 4)}
+        w.favorites = {'1', '2'}
+        dialog = SearchDialog({}, 0, 4, w)
+        w.dialogs.append(dialog)
+        dialog.show()
+        dialog.favorite_strip.item(1).setCheckState(Qt.Checked)
+        before = [t.generation for t in w.tiles]
+        w.favorite_poll_pending = True
+        w.favorite_status_ready([dict(w.rooms['2'], live=True), dict(w.rooms['3'], live=True)])
+        self.assertFalse(w.favorite_poll_pending)
+        self.assertEqual(w.room_list.item(0).data(Qt.UserRole)['id'], '2')
+        self.assertEqual(dialog.favorite_strip.item(0).data(Qt.UserRole)['id'], '2')
+        self.assertEqual(dialog.favorite_strip.item(0).checkState(), Qt.Checked)
+        self.assertFalse(w.rooms['3']['live'])
+        self.assertEqual(before, [t.generation for t in w.tiles])
+        w.favorite_status_failed('network')
+        self.assertTrue(w.rooms['2']['live'])
+        self.assertEqual(w.favorite_timer.interval(), 30000)
+        w.demo = False
+        with patch('studio.app.QThreadPool') as pool:
+            w.refresh_favorite_status()
+            w.refresh_favorite_status()
+            pool.globalInstance.return_value.start.assert_called_once()
+        w.demo = True
+        dialog.close()
+
+    def test_avatar_drag_works_without_selection_and_does_not_click(self):
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+        w = self.window
+        room = {'id': '88', 'uid': 88, 'name': '拖拽示例'}
+        w.rooms, w.favorites = {'88': room}, {'88'}
+        w.refresh_library()
+        rail = w.room_list
+        point = rail.visualItemRect(rail.item(0)).center()
+        clicked = Mock()
+        rail.itemClicked.connect(clicked)
+        w.tiles[0].set_room = Mock()
+        with patch('studio.sidebar.QDrag') as drag:
+            QTest.mousePress(rail.viewport(), Qt.LeftButton, pos=point)
+            small = QMouseEvent(QEvent.MouseMove, QPointF(point + QPoint(1, 0)), QPointF(point + QPoint(1, 0)), Qt.NoButton, Qt.LeftButton, Qt.NoModifier)
+            rail.mouseMoveEvent(small)
+            drag.assert_not_called()
+            move = QMouseEvent(QEvent.MouseMove, QPointF(point + QPoint(25, 0)), QPointF(point + QPoint(25, 0)), Qt.NoButton, Qt.LeftButton, Qt.NoModifier)
+            rail.mouseMoveEvent(move)
+            mime = drag.return_value.setMimeData.call_args.args[0]
+            event = SimpleNamespace(mimeData=lambda: mime, acceptProposedAction=Mock())
+            w.tiles[0].dropEvent(event)
+            QTest.mouseRelease(rail.viewport(), Qt.LeftButton, pos=point)
+        w.tiles[0].set_room.assert_called_once_with(room)
+        clicked.assert_not_called()
+
+    def test_first_sc_after_room_clear_keeps_bubble_inside_view(self):
+        from studio.chat import ChatView
+        view = ChatView()
+        view.resize(185, 270)
+        view.show()
+        view.add_message({'name': '旧房间', 'text': '消息'})
+        view.clear()
+        view.add_message({'kind': 'sc', 'price': '2', 'name': 'Med1umWe11_Yan', 'text': '胖宝宝胖宝宝我来了'})
+        view.add_message({'kind': 'gift', 'name': '示例观众', 'text': '赠送 粉丝团灯牌 × 1'})
+        self.app.processEvents()
+        first = view.document().begin()
+        rect = view.document().documentLayout().blockBoundingRect(first)
+        self.assertGreaterEqual(rect.top(), 8)
+        self.assertEqual(view.document().rootFrame().frameFormat().topMargin(), 10)
+        self.assertNotIn(' · ', view.toPlainText())
+        from PySide6.QtGui import QColor
+        from studio.theme import COLORS
+        rendered = view.viewport().grab().toImage()
+        self.assertEqual(rendered.pixelColor(rendered.width() - 14, int(rect.top()) + 5).name(),
+                         QColor(COLORS['sc_surface']).name())
+        folder = ROOT / '.qa'
+        folder.mkdir(exist_ok=True)
+        view.grab().save(str(folder / 'fresh-room-sc-gift.png'))
+        view.close()
 
     def test_live_sc_spacing_matches_history_and_gift_icon_is_local(self):
         from studio.chat import ChatView
@@ -335,7 +437,6 @@ class UITests(unittest.TestCase):
         a.chat_toggle.click()
         self.assertFalse(a.chat_panel.isVisible())
         self.assertTrue(b.chat_panel.isVisible())
-        w.library_toggle.click()
         w.controls_toggle.click()
         self.assertTrue(w.library.isVisible())
         self.assertLessEqual(w.library.width(), 56)
@@ -400,11 +501,10 @@ class UITests(unittest.TestCase):
         w.demo = False
         w.chat_toggle.setChecked(False)
         w.chat_font.setValue(17)
-        w.library_toggle.setChecked(False)
         w.save()
         saved = load_state(self.path)
         self.assertFalse(saved['chat_visible'])
-        self.assertFalse(saved['library_visible'])
+        self.assertNotIn('library_visible', saved)
         self.assertEqual(saved['chat_font'], 17)
         self.assertEqual(saved['slots'], [None] * 9)
 
@@ -476,44 +576,27 @@ class UITests(unittest.TestCase):
             tile.shutdown()
             tile.close()
 
-    def test_avatar_rail_can_restore_sidebar_and_focus_without_reload(self):
+    def test_fixed_avatar_rail_focuses_without_reload_and_ignores_old_width(self):
         w = self.window
         room = {'id': '123', 'name': '测试主播', 'live': True, 'title': '直播标题'}
         w.rooms = {'123': room}
         w.favorites = {'123'}
         w.tiles[1].room = room
         w.refresh_library()
-        width = w.library.width()
-        w.library_filter.setText('无匹配')
-        self.assertEqual(w.room_list.count(), 0)
-        w.library_toggle.click()
-        self.app.processEvents()
-        self.assertTrue(w.library.isVisible())
-        self.assertEqual(w.room_list.count(), 1)
-        self.assertTrue(w.library_toggle.isVisible() and w.library_add.isVisible())
-        self.assertLess(w.library_toggle.x(), 60)
-        self.assertLessEqual(w.library.width(), 56)
+        self.assertEqual(w.library.width(), 42)
+        self.assertTrue(w.library_add.isVisible())
+        self.assertFalse(hasattr(w, 'library_toggle'))
+        self.assertFalse(hasattr(w, 'splitter'))
         self.assertIn('测试主播', w.room_list.item(0).toolTip())
         generation = w.tiles[1].generation
         w.room_list.itemClicked.emit(w.room_list.item(0))
         self.assertEqual(w.active, 1)
         self.assertEqual(w.tiles[1].generation, generation)
-        w.library_toggle.click()
-        self.app.processEvents()
-        self.assertLess(abs(w.library.width() - width), 20)
-        self.assertEqual(w.library_filter.text(), '无匹配')
-
-    def test_collapsed_sidebar_persists_as_avatar_rail(self):
-        w = self.window
-        w.demo = False
-        w.library_toggle.setChecked(False)
-        w.save()
+        self.path.write_text(json.dumps({'library_visible': True, 'splitter': [400, 500]}), encoding='utf-8')
         again = StudioWindow(ROOT, demo=True, state_path=self.path)
         again.show()
         self.app.processEvents()
-        self.assertTrue(again.library.isVisible())
-        self.assertLessEqual(again.library.width(), 56)
-        self.assertTrue(again.library_toggle.isVisible())
+        self.assertEqual(again.library.width(), 42)
         again.close()
 
     def test_preview(self):
@@ -812,8 +895,8 @@ class UITests(unittest.TestCase):
 
     def test_top_icons_help_popup_title_and_dropdown_position(self):
         w = self.window
-        self.assertLess(w.global_controls.mapToGlobal(QPoint()).y(),w.splitter.mapToGlobal(QPoint()).y())
-        self.assertLess(w.centralWidget().height()-w.splitter.geometry().bottom(),20)
+        self.assertLess(w.global_controls.mapToGlobal(QPoint()).y(),w.content.mapToGlobal(QPoint()).y())
+        self.assertLess(w.centralWidget().height()-w.content.geometry().bottom(),20)
         for control in (w.pause_all,w.mute_all,w.reload_button,w.chat_toggle,w.info_button,w.tiles[0].play_button,w.tiles[0].remove):
             self.assertTrue(control.text() == '' and not control.icon().isNull() and control.toolTip())
         self.assertFalse(hasattr(w.tiles[0],'add_button'))

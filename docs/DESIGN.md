@@ -17,11 +17,14 @@ through `studio.theme.stylesheet()`, including in preview and test scripts.
   Compact chat tabs use 11 px, headings 15 px and the brand 16 px. Chat text may
   still follow the user's chosen size.
 - SC bubbles have 8 px padding, 8 px corner radius and a shared message gap.
+  Cards fill the available chat width. Restore document padding after clearing
+  a room so the first card is not clipped; the SC heading uses spaces, not dots.
   Explicit document block formats keep incoming messages and rebuilt history
   identical. Draw the rounded background behind selectable text; Qt rich text
   does not implement CSS `border-radius`.
-- The avatar rail starts at the left content edge; the sidebar toggle is centered
-  over the collapsed rail. Keep the existing video/chat splitter behavior.
+- The fixed 42 px avatar rail starts at the left content edge, with centered
+  26 px avatars in square cells. No sidebar splitter or collapse control.
+  The header starts with verified account status. Keep video/chat splitters.
 
 Use the offscreen UI tests to verify real widget geometry and render examples.
 These previews contain sample messages, not paid test messages.

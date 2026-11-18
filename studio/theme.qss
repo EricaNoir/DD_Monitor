@@ -38,7 +38,9 @@ QMenu::item { padding: 7px 14px; }
 QMenu::item:selected { background: $pressed; }
 QFrame#Surface { background: $video; border: 0; }
 QFrame#Library { background: $surface; border: 0; }
-QPushButton#SidebarAdd { border-top: 1px solid $border; border-radius: 0; text-align: left; padding-left: 16px; }
+QPushButton#SidebarAdd { border-top: 1px solid $border; border-radius: 0; text-align: center; padding: 0; }
+QListWidget#AvatarRail { padding: 0; }
+QListWidget#AvatarRail::item { padding: 0; margin: 0; }
 QPushButton#ClosePlayer:hover { color: $text; background: $danger_hover; }
 QFrame#RoomChat { background: $chat_surface; border: 0; border-left: 1px solid $selected; }
 QTabBar#ChatTabs::tab { background: transparent; color: $text_muted; padding: 5px 2px; border-bottom: 2px solid transparent; font-size: ${font_caption}px; }

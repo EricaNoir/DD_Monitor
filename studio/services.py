@@ -199,6 +199,28 @@ class BiliAPI:
             result['follow_state'] = 'unavailable'
         return result
 
+    def room_statuses(self, rooms):
+        updated = []
+        known = []
+        for room in rooms:
+            if room.get('uid'):
+                known.append(room)
+            else:
+                updated.append(dict(self.room(room['id']), id=room['id']))
+        for offset in range(0, len(known), 50):
+            batch = known[offset:offset + 50]
+            data = self.get('https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids',
+                            **{'uids[]': [room['uid'] for room in batch]})
+            for room in batch:
+                info = data.get(str(room['uid']))
+                if not info or 'live_status' not in info:
+                    continue
+                updated.append(dict(room, live=info['live_status'] == 1,
+                                    title=plain(info.get('title', room.get('title', ''))),
+                                    name=plain(info.get('uname') or room['name']),
+                                    face=safe_image(info.get('face')) or room.get('face', '')))
+        return updated
+
     def stream(self, rid, quality=400):
         room = self.room(rid)
         if not room['live']:

@@ -1,4 +1,4 @@
-"""Opt-in real avatar downloads and expanded/collapsed UI preview."""
+"""Opt-in real avatar downloads and fixed rail UI preview."""
 import os
 import sys
 from pathlib import Path
@@ -48,10 +48,7 @@ result = {}
 def finish():
     timer.stop()
     result['loaded'] = len(window.avatars.images)
-    window.library_toggle.setChecked(True)
     app.processEvents()
-    window.grab().save(str(output / 'avatar-sidebar-expanded.png'))
-    window.library_toggle.setChecked(False)
     app.processEvents()
     window.grab().save(str(output / 'avatar-sidebar-collapsed.png'))
     window.open_search(0)
