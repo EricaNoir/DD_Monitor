@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QVBox
     QAbstractItemView, QDialog, QSplitter, QCheckBox, QSpinBox, QSlider, QMessageBox)
 from .services import BiliAPI, Job
 from .player import PlayerTile
-from .sidebar import RoomList, AvatarStore, SearchResultDelegate
+from .sidebar import RoomList, AvatarStore
+from .search_dialog import SearchDialog
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox
 from .payment_dialog import PaymentDialog
@@ -31,207 +32,6 @@ def label(text, kind='Muted'):
     widget = QLabel(text)
     widget.setObjectName(kind)
     return widget
-
-
-class SearchDialog(QDialog):
-    rooms_added = Signal(list, int)
-    favorite_changed = Signal(dict, bool)
-
-    def __init__(self, cookies, target, count, parent=None):
-        super().__init__(parent)
-        self.cookies, self.page, self.ticket, self.query = cookies, 1, 0, ''
-        self.mode = 'favorites'
-        self.favorite_ids = set(getattr(parent, 'favorites', ()))
-        self.setWindowTitle('添加直播间')
-        self.resize(760, 580)
-        self.setMinimumSize(620, 460)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(14)
-        layout.addWidget(label('找到想看的 UP 主', 'Heading'))
-        layout.addWidget(label('按昵称搜索，也可以直接粘贴直播间链接或房号。'))
-        row = QHBoxLayout()
-        self.input = QLineEdit()
-        self.input.setPlaceholderText('例如 OA-LEAVE7 / 31294374 / 直播间链接')
-        self.input.returnPressed.connect(self.search)
-        self.search_button = button('搜索', self.search, True)
-        row.addWidget(self.input, 1)
-        row.addWidget(self.search_button)
-        layout.addLayout(row)
-        self.status = label('输入昵称后按 Enter 开始搜索。')
-        self.status.setWordWrap(True)
-        layout.addWidget(self.status)
-        self.results = QListWidget()
-        self.results.avatars = parent.avatars if parent and hasattr(parent, 'avatars') else AvatarStore(Path(__file__).resolve().parents[1] / 'user-data/avatars', self)
-        self.result_delegate = SearchResultDelegate(self.results)
-        self.results.setItemDelegate(self.result_delegate)
-        self.result_delegate.favorite_clicked.connect(self.toggle_favorite)
-        self.results.avatars.changed.connect(self.results.viewport().update)
-        self.results.setMouseTracking(True)
-        self.results.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.results.itemChanged.connect(self.update_count)
-        filters = QHBoxLayout()
-        self.favorites_button = button('已收藏', self.show_favorites)
-        self.favorites_button.setIcon(icon('star'))
-        filters.addWidget(self.favorites_button)
-        self.follow_filter = QComboBox()
-        self.follow_filter.addItem('全部', 'all')
-        self.follow_filter.addItem('已关注', 'following')
-        self.follow_filter.addItem('未关注', 'not_following')
-        self.follow_filter.setEnabled(False)
-        self.follow_filter.currentIndexChanged.connect(self.apply_filter)
-        filters.addWidget(self.follow_filter)
-        self.follow_hint = label('登录后可筛选关注状态')
-        filters.addWidget(self.follow_hint, 1)
-        self.login_button = button('登录', lambda: parent.login() if parent and hasattr(parent, 'login') else None)
-        filters.addWidget(self.login_button)
-        layout.addLayout(filters)
-        layout.addWidget(self.results, 1)
-        self.more = button('加载更多', lambda: self.search(more=True))
-        self.more.setVisible(False)
-        layout.addWidget(self.more, alignment=Qt.AlignCenter)
-        row = QHBoxLayout()
-        self.target = QComboBox()
-        self.target.addItem('仅收藏到侧栏', -1)
-        for index in range(count):
-            self.target.addItem(f'加入并播放到画面 {index + 1}', index)
-        self.target.setCurrentIndex(target + 1)
-        row.addWidget(self.target)
-        row.addStretch()
-        row.addWidget(button('取消', self.reject))
-        self.add_button = button('添加选中 (0)', self.add_selected, True)
-        self.add_button.setEnabled(False)
-        row.addWidget(self.add_button)
-        layout.addLayout(row)
-        self.show_favorites()
-
-    def show_favorites(self):
-        self.mode = 'favorites'
-        self.ticket += 1
-        ticket = self.ticket
-        self.results.clear()
-        parent = self.parent()
-        self.favorite_ids = set(getattr(parent, 'favorites', ()))
-        rooms = [dict(room, following=None) for rid, room in getattr(parent, 'rooms', {}).items() if rid in self.favorite_ids]
-        rooms.sort(key=lambda room: not room.get('live', False))
-        self.show_results(ticket, {'rooms': rooms, 'more': False, 'follow_state': 'login_required' if not self.cookies else 'pending'})
-        if self.cookies and rooms:
-            api = BiliAPI(self.cookies)
-            job = Job(lambda: api.with_follow_state({'rooms': rooms, 'more': False}))
-            job.signals.done.connect(lambda data: self.show_results(ticket, data))
-            QThreadPool.globalInstance().start(job)
-
-    def toggle_favorite(self, rid):
-        for i in range(self.results.count()):
-            item = self.results.item(i)
-            room = item.data(Qt.UserRole)
-            if room['id'] == rid:
-                added = rid not in self.favorite_ids
-                if added:
-                    self.favorite_ids.add(rid)
-                else:
-                    self.favorite_ids.discard(rid)
-                item.setData(Qt.UserRole+1, added)
-                self.favorite_changed.emit(room, added)
-                self.apply_filter()
-                return
-
-    def toggle_item(self, item):
-        item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
-
-    def update_count(self, *_):
-        count = sum(self.results.item(i).checkState() == Qt.Checked and not self.results.item(i).isHidden() for i in range(self.results.count()))
-        self.add_button.setText(f'添加选中 ({count})')
-        self.add_button.setEnabled(count > 0)
-
-    def search(self, checked=False, more=False):
-        query = self.input.text().strip()
-        if not query:
-            self.status.setText('先输入 UP 主昵称、房号或直播间链接。')
-            self.input.setFocus()
-            return
-        self.ticket += 1
-        self.mode = 'search'
-        ticket = self.ticket
-        if not more or query != self.query:
-            self.page = 1
-            self.results.clear()
-        else:
-            self.page += 1
-        self.query = query
-        self.status.setText(f'正在搜索「{query}」…')
-        self.search_button.setEnabled(False)
-        self.more.setEnabled(False)
-        api, page = BiliAPI(self.cookies), self.page
-        job = Job(lambda: api.search_with_follow(query, page))
-        job.signals.done.connect(lambda data: self.show_results(ticket, data))
-        job.signals.error.connect(lambda error: self.show_error(ticket, error))
-        QThreadPool.globalInstance().start(job)
-
-    def show_results(self, ticket, data):
-        if ticket != self.ticket:
-            return
-        existing = {self.results.item(i).data(Qt.UserRole)['id'] for i in range(self.results.count())}
-        for room in data['rooms']:
-            if room['id'] in existing:
-                for i in range(self.results.count()):
-                    item = self.results.item(i)
-                    if item.data(Qt.UserRole)['id'] == room['id']:
-                        item.setData(Qt.UserRole, room)
-                continue
-            status = '● 直播中' if room.get('live') else '○ 未开播'
-            item = QListWidgetItem(f'{room["name"]}    {status}\n房号 {room["id"]}  ·  {room.get("title", "")}')
-            item.setData(Qt.UserRole, room)
-            item.setData(Qt.UserRole+1, room['id'] in self.favorite_ids)
-            item.setToolTip(room['name'] + '\n' + room.get('title',''))
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Unchecked)
-            item.setSizeHint(QSize(0, 70))
-            self.results.addItem(item)
-        known = any(self.results.item(i).data(Qt.UserRole).get('following') is not None for i in range(self.results.count()))
-        self.follow_filter.setEnabled(known)
-        state = data.get('follow_state', 'login_required')
-        self.follow_hint.setText({'ok':'按当前账号筛选已加载的结果', 'pending':'正在读取关注状态…',
-                                 'login_required':'请先登录 B 站，才能筛选关注状态'}.get(state, '关注状态暂不可用，请重试或重新登录'))
-        self.login_button.setVisible(state not in ('ok','pending'))
-        if not known:
-            self.follow_filter.setCurrentIndex(0)
-        self.apply_filter()
-        self.search_button.setEnabled(True)
-        self.more.setVisible(data['more'])
-        self.more.setEnabled(True)
-
-    def apply_filter(self, *_):
-        mode = self.follow_filter.currentData()
-        visible = 0
-        for i in range(self.results.count()):
-            item = self.results.item(i)
-            following = item.data(Qt.UserRole).get('following')
-            shown = mode == 'all' or (mode == 'following' and following is True) or (mode == 'not_following' and following is False)
-            if self.mode == 'favorites' and item.data(Qt.UserRole)['id'] not in self.favorite_ids:
-                shown = False
-            item.setHidden(not shown)
-            visible += int(shown)
-        total = self.results.count()
-        if self.mode == 'favorites':
-            self.status.setText(f'已收藏的直播间 · {visible} 个，勾选后快速播放。' if visible else '还没有匹配的收藏。搜索主播，点击星标收藏到左侧。')
-        else:
-            self.status.setText(f'已加载 {total} 个直播间，显示 {visible} 个。勾选播放，星标收藏。' if total else '没有找到匹配直播间。试试完整昵称或房号。')
-        self.update_count()
-
-    def show_error(self, ticket, error):
-        if ticket == self.ticket:
-            self.status.setText(error + ' 也可以用房号或直播间链接添加。')
-            self.search_button.setEnabled(True)
-            self.more.setEnabled(True)
-            self.page = max(1, self.page - 1)
-
-    def add_selected(self):
-        rooms = [self.results.item(i).data(Qt.UserRole) for i in range(self.results.count())
-                 if self.results.item(i).checkState() == Qt.Checked and not self.results.item(i).isHidden()]
-        if rooms:
-            self.rooms_added.emit(rooms, self.target.currentData())
-            self.accept()
 
 
 class LoginDialog(QDialog):
@@ -492,6 +292,7 @@ class StudioWindow(QMainWindow):
         self.library_filter.textChanged.connect(self.refresh_library)
         box.addWidget(self.library_filter)
         self.room_list = RoomList(self.avatars)
+        self.room_list.remove_requested.connect(lambda room: self.set_favorite(room, False))
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list, 1)
@@ -568,6 +369,7 @@ class StudioWindow(QMainWindow):
             if room['id'] == selected_id:
                 self.room_list.setCurrentItem(item)
         self.library_empty.setVisible(not self.favorites and self.library_toggle.isChecked())
+        self.sync_sidebar_visible()
 
     def hydrate_avatars(self):
         if self.demo or self.closing:
@@ -647,12 +449,8 @@ class StudioWindow(QMainWindow):
             self.favorites.discard(room['id'])
         self.refresh_library()
         for dialog in self.dialogs:
-            if isinstance(dialog, SearchDialog):
-                dialog.favorite_ids = set(self.favorites)
-                for i in range(dialog.results.count()):
-                    item = dialog.results.item(i)
-                    item.setData(Qt.UserRole+1, item.data(Qt.UserRole)['id'] in self.favorites)
-                dialog.apply_filter()
+            if isinstance(dialog, SearchDialog) and dialog.isVisible():
+                dialog.sync_favorites(self.rooms, self.favorites)
         self.save()
 
     def play_library(self, item):
@@ -672,6 +470,13 @@ class StudioWindow(QMainWindow):
             tile.set_active(tile.index == index)
         room = self.tiles[index].room
         self.room_list.active_room = room['id'] if room else None
+        self.sync_sidebar_visible()
+
+    def sync_sidebar_visible(self):
+        if not hasattr(self, 'tiles'):
+            return
+        indices = [self.focused] if self.focused is not None else range(self.count)
+        self.room_list.visible_rooms = {self.tiles[i].room['id'] for i in indices if self.tiles[i].room}
         self.room_list.viewport().update()
 
     def tile_changed(self):
@@ -684,7 +489,7 @@ class StudioWindow(QMainWindow):
             self.mute_all.blockSignals(False)
             room = self.tiles[self.active].room
             self.room_list.active_room = room['id'] if room else None
-            self.room_list.viewport().update()
+            self.sync_sidebar_visible()
             self.chat_toggle.blockSignals(True)
             self.chat_toggle.setChecked(any(t.chat_toggle.isChecked() for t in self.tiles[:self.count]))
             self.chat_toggle.blockSignals(False)
@@ -717,6 +522,7 @@ class StudioWindow(QMainWindow):
             tile.suspend(tile.index not in indices)
             tile.focus_button.setIcon(icon('collapse' if self.focused == tile.index else 'expand'))
             tile.focus_button.setToolTip('返回多屏' if self.focused == tile.index else '放大这个画面')
+        self.sync_sidebar_visible()
 
     def swap_tiles(self, source, target):
         if self.focused is not None or source == target or not (0 <= source < self.count and 0 <= target < self.count):
@@ -858,11 +664,7 @@ class StudioWindow(QMainWindow):
                 if not dialog.terminal:
                     dialog.reload()
             if isinstance(dialog, SearchDialog) and dialog.isVisible():
-                dialog.cookies = cookies
-                if dialog.mode == 'favorites':
-                    dialog.show_favorites()
-                elif dialog.input.text().strip():
-                    dialog.search()
+                dialog.refresh_account(cookies)
 
     def restore_rooms(self):
         for index, rid in enumerate(self.state['slots'][:9]):

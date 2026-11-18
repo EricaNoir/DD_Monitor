@@ -92,6 +92,49 @@ class UITests(unittest.TestCase):
         self.app.processEvents()
         self.temp.cleanup()
 
+    def test_send_scrolls_to_latest_without_moving_chat_or_input(self):
+        tile = self.window.tiles[0]
+        c = tile.composer
+        c.set_room({'id': '123'}, {'SESSDATA': 'test', 'bili_jct': 'test'}, load=False)
+        c.ready(c.ticket, 80)
+        c.run_job = Mock()
+        tile.chat_status = '已连接'
+        tile.refresh_chat_status()
+        for i in range(120):
+            tile.receive_chat(None, {'uid': '1', 'name': '观众', 'text': f'历史消息 {i}'})
+        self.app.processEvents()
+        tile.chat_view.follow = False
+        bar = tile.chat_view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        bar.setValue(0)
+        def positions():
+            return [(w.mapTo(tile, QPoint()), w.size()) for w in (c.input, tile.chat_view, c)]
+        before = positions()
+        c.input.setText('我的消息')
+        c.send()
+        self.app.processEvents()
+        self.assertEqual(positions(), before)
+        self.assertEqual(tile.chat_connection.text(), '发送中…')
+        c.sent(c.ticket, '我的消息', '99')
+        self.app.processEvents()
+        self.assertEqual(positions(), before)
+        self.assertEqual(c.status_text, '')
+        self.assertEqual(tile.chat_connection.text(), '已连接')
+        self.assertEqual(bar.value(), bar.maximum())
+        bar.setValue(0)
+        tile.receive_chat(None, {'uid': '99', 'name': '我', 'text': '我的消息'})
+        self.app.processEvents()
+        self.assertEqual(bar.value(), bar.maximum())
+        self.assertFalse(tile.chat_view.follow)
+        c.failed(c.ticket, '发送失败，请稍后重试。' * 10 + '\n网络错误')
+        self.app.processEvents()
+        self.assertEqual(positions(), before)
+        self.assertIn('网络错误', tile.chat_connection.toolTip())
+        c.status('')
+        folder = ROOT / '.qa'
+        folder.mkdir(exist_ok=True)
+        tile.chat_panel.grab().save(str(folder / 'chat-send-stable.png'))
+
     def test_protobuf_gifts_reach_chat_and_batch_is_not_dropped(self):
         from studio.services import parse_messages
         from test_gift_proto import broadcast
@@ -586,13 +629,77 @@ class UITests(unittest.TestCase):
         dialog.close()
         w.open_search(1)
         quick = w.dialogs[-1]
-        self.assertEqual(quick.mode,'favorites')
-        self.assertEqual(quick.results.item(0).data(Qt.UserRole)['id'],'99')
+        self.assertEqual(quick.mode,'following')
+        self.assertEqual(quick.favorite_strip.item(0).data(Qt.UserRole)['id'],'99')
         self.assertEqual(quick.target.currentData(),1)
         quick.toggle_favorite('99')
         self.assertNotIn('99',w.favorites)
         self.assertEqual(w.room_list.count(),0)
+        self.assertEqual(quick.favorite_strip.count(),1)
+        self.assertFalse(quick.favorite_strip.item(0).data(Qt.UserRole+1))
+        quick.toggle_favorite('99')
+        self.assertTrue(quick.favorite_strip.item(0).data(Qt.UserRole+1))
+        quick.toggle_favorite('99')
         quick.close()
+        w.open_search(1)
+        self.assertEqual(w.dialogs[-1].favorite_strip.count(), 0)
+        w.dialogs[-1].close()
+
+    def test_favorite_avatar_selects_and_star_does_not_remove_until_close(self):
+        w = self.window
+        w.rooms = {str(i): {'id':str(i),'name':f'主播{i}','live':i==2} for i in (1,2,3)}
+        w.favorites = set(w.rooms)
+        w.open_search(0)
+        d = w.dialogs[-1]
+        self.app.processEvents()
+        first = d.favorite_strip.item(0)
+        self.assertEqual(first.data(Qt.UserRole)['id'], '2')
+        rect = d.favorite_strip.visualItemRect(first)
+        QTest.mouseClick(d.favorite_strip.viewport(), Qt.LeftButton, pos=rect.center())
+        self.assertEqual(first.checkState(), Qt.Checked)
+        self.assertEqual([r['id'] for r in d.selected_rooms()], ['2'])
+        star = d.favorite_strip.itemDelegate().favorite_rect(rect).center().toPoint()
+        QTest.mouseClick(d.favorite_strip.viewport(), Qt.LeftButton, pos=star)
+        self.assertNotIn('2', w.favorites)
+        self.assertEqual(d.favorite_strip.count(), 3)
+        self.assertEqual(first.checkState(), Qt.Checked)
+        d.close()
+
+    def test_sidebar_right_click_removes_only_target_favorite(self):
+        w = self.window
+        w.rooms = {str(i): {'id':str(i),'name':f'主播{i}','live':False} for i in (1,2)}
+        w.favorites = set(w.rooms)
+        w.tiles[0].room = dict(w.rooms['2'])
+        w.refresh_library()
+        self.app.processEvents()
+        item = w.room_list.item(1)
+        position = w.room_list.visualItemRect(item).center()
+        with patch.object(w.tiles[0], 'set_room') as play:
+            QTest.mouseClick(w.room_list.viewport(), Qt.RightButton, pos=position)
+            w.room_list.show_context_menu(position)
+            self.assertEqual(w.room_list.context_menu.actions()[0].text(), '移除收藏')
+            w.room_list.context_menu.actions()[0].trigger()
+            w.room_list.context_menu.close()
+            play.assert_not_called()
+        self.assertEqual(w.favorites, {'1'})
+        self.assertEqual(w.tiles[0].room['id'], '2')
+
+    def test_sidebar_highlights_all_visible_rooms_and_tracks_layout_and_focus(self):
+        w = self.window
+        for index, tile in enumerate(w.tiles[:5]):
+            tile.room = {'id':str(index+1),'name':f'主播{index+1}'}
+        w.sync_sidebar_visible()
+        self.assertEqual(w.room_list.visible_rooms, {'1','2','3','4'})
+        w.select_tile(2)
+        self.assertEqual(w.room_list.visible_rooms, {'1','2','3','4'})
+        w.focus_tile(2)
+        self.assertEqual(w.room_list.visible_rooms, {'3'})
+        w.exit_focus()
+        self.assertEqual(w.room_list.visible_rooms, {'1','2','3','4'})
+        w.layout_choice.setCurrentIndex(w.layout_choice.findData(2))
+        self.assertEqual(w.room_list.visible_rooms, {'1','2'})
+        w.tiles[0].clear()
+        self.assertEqual(w.room_list.visible_rooms, {'2'})
 
     def test_follow_filter_excludes_unknown_and_hidden_selections(self):
         dialog = SearchDialog({},0,4,self.window)

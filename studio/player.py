@@ -1,4 +1,5 @@
 from collections import deque
+import time
 from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool, QMimeData
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -70,6 +71,8 @@ class PlayerTile(QFrame):
         self.history = deque(maxlen=500)
         self.deleted_sc = deque(maxlen=500)
         self.chat_status = '选择直播间后显示聊天'
+        self.send_status = ''
+        self.pending_sent = None
         self.muted = index != 0
         self.paused = False
         self.suspended = False
@@ -175,6 +178,9 @@ class PlayerTile(QFrame):
         chat_layout.addWidget(self.composer)
         chat_footer = QHBoxLayout()
         self.chat_connection = QLabel('等待连接')
+        self.chat_connection.setTextFormat(Qt.PlainText)
+        self.chat_connection.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.chat_connection.setMinimumWidth(0)
         self.chat_connection.setObjectName('Muted')
         self.chat_connection.setToolTip(self.chat_status)
         chat_footer.addWidget(self.chat_connection, 1)
@@ -184,6 +190,8 @@ class PlayerTile(QFrame):
         self.chat_bottom.clicked.connect(lambda: self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum()))
         chat_footer.addWidget(self.chat_bottom)
         chat_layout.addLayout(chat_footer)
+        self.composer.feedback_changed.connect(self.set_send_status)
+        self.composer.message_sent.connect(self.scroll_after_send)
         self.content_splitter.addWidget(self.chat_panel)
         self.content_splitter.setStretchFactor(0, 1)
         self.content_splitter.setStretchFactor(1, 0)
@@ -469,7 +477,33 @@ class PlayerTile(QFrame):
                 self.sc_overlay.add_message(message)
             if self.accepts_chat(message):
                 self.chat_view.add_message(message)
+            if self.pending_sent:
+                uid, text, deadline = self.pending_sent
+                if time.monotonic() > deadline:
+                    self.pending_sent = None
+                elif str(message.get('uid', '')) == uid and message.get('text') == text:
+                    self.pending_sent = None
+                    self.scroll_chat_latest()
             self.chat_received.emit(self.index, message)
+
+    def scroll_chat_latest(self):
+        bar = self.chat_view.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def scroll_after_send(self, uid, text):
+        self.pending_sent = (uid, text, time.monotonic() + 15) if uid else None
+        self.scroll_chat_latest()
+        QTimer.singleShot(0, self.scroll_chat_latest)
+
+    def set_send_status(self, text):
+        self.send_status = text
+        self.refresh_chat_status()
+
+    def refresh_chat_status(self):
+        text = self.chat_status
+        self.chat_connection.setText(self.send_status.replace('\n', ' ') if self.send_status else
+                                     ('已连接' if '已连接' in text else ('连接中' if '连接' in text else text)))
+        self.chat_connection.setToolTip(self.send_status or text)
 
     def accepts_chat(self, message):
         kind = self.chat_tabs.tabData(self.chat_tabs.currentIndex())
@@ -485,8 +519,7 @@ class PlayerTile(QFrame):
     def set_chat_status(self, worker, text):
         if worker is self.chat_worker:
             self.chat_status = text
-            self.chat_connection.setText('已连接' if '已连接' in text else ('连接中' if '连接' in text else text))
-            self.chat_connection.setToolTip(text)
+            self.refresh_chat_status()
 
     def retire_chat(self):
         worker = self.chat_worker
@@ -511,6 +544,7 @@ class PlayerTile(QFrame):
         self._audio_pending = False
         self.retire_chat()
         self.history.clear()
+        self.pending_sent = None
         self.sc_overlay.clear()
         self.composer.set_room(None, {})
         self.deleted_sc.clear()

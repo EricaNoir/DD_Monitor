@@ -10,7 +10,7 @@ from studio.services import BiliAPI, ChatWorker, parse_activity
 from studio.sc_overlay import sc_interval
 
 COOKIES = {'SESSDATA': 'test-only', 'bili_jct': 'test-only'}
-NAV = {'isLogin': True, 'wbi_img': {'img_url': 'https://i0.hdslb.com/' + 'a'*32 + '.png',
+NAV = {'isLogin': True, 'mid': 99, 'wbi_img': {'img_url': 'https://i0.hdslb.com/' + 'a'*32 + '.png',
                                  'sub_url': 'https://i0.hdslb.com/' + 'b'*32 + '.png'}}
 CONFIG = {'property': {'danmu': {'length': 80}}}
 
@@ -22,7 +22,7 @@ class ChatSendTests(unittest.TestCase):
         self.api.session.post = Mock(return_value=Mock(json=Mock(return_value={'code': 0, 'message': ''})))
 
     def test_plain_danmaku_payload_csrf_wbi_and_no_retry(self):
-        self.assertTrue(self.api.send_chat('123', '测试 弹幕!'))
+        self.assertEqual(self.api.send_chat('123', '测试 弹幕!'), {'uid':'99', 'text':'测试 弹幕!'})
         self.api.session.post.assert_called_once()
         args, kwargs = self.api.session.post.call_args
         self.assertTrue(args[0].endswith('/msg/send'))
@@ -117,7 +117,7 @@ class ComposerTests(unittest.TestCase):
         c.ready(c.ticket, 20)
         self.assertEqual(c.input.text(), '字' * 60)
         self.assertFalse(c.button.isEnabled())
-        self.assertIn('60/20', c.hint.text())
+        self.assertIn('60/20', c.status_text)
 
 
 if __name__ == '__main__':

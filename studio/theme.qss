@@ -40,6 +40,14 @@ QFrame#RoomChat { background: #232323; border: 0; border-left: 1px solid #353535
 QTabBar#ChatTabs::tab { background: transparent; color: #949494; padding: 5px 2px; border-bottom: 2px solid transparent; font-size: 11px; }
 QTabBar#ChatTabs::tab:selected { color: #ededed; border-bottom-color: #b7b7b7; }
 QTabBar#ChatTabs::tab:hover { color: #dedede; }
+QTabBar#SearchTabs::tab { background: transparent; color: #999999; padding: 8px 13px; border-bottom: 2px solid transparent; }
+QTabBar#SearchTabs::tab:selected { color: #eeeeee; border-bottom-color: #b7b7b7; }
+QTabBar#SearchTabs::tab:hover { color: #dedede; }
+QListWidget#FavoritesStrip { padding: 0; }
+QListWidget#FavoritesStrip::item { padding: 0; margin: 0; }
+QListWidget#FavoritesStrip QScrollBar:horizontal { background: transparent; height: 4px; }
+QListWidget#FavoritesStrip QScrollBar::handle:horizontal { background: #505050; min-width: 24px; border-radius: 2px; }
+QListWidget#FavoritesStrip QScrollBar::add-line:horizontal, QListWidget#FavoritesStrip QScrollBar::sub-line:horizontal { width: 0; }
 QTextBrowser { background: #232323; border: 0; padding: 4px; selection-background-color: #515151; }
 QSplitter::handle { background: #272727; }
 QSplitter::handle:hover { background: #646464; }

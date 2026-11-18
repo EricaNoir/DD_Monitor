@@ -102,7 +102,7 @@ class BiliAPI:
         # This endpoint can return code=0 with a nonempty rejection message.
         if body['code'] != 0 or message not in ('', '0', 'OK', 'ok', 'success'):
             raise ValueError(str(message or 'B 站未接受这条弹幕。'))
-        return True
+        return {'uid': str(nav.get('mid') or ''), 'text': text}
 
     def search(self, query, page=1):
         number = room_number(query)
@@ -135,6 +135,42 @@ class BiliAPI:
     def search_with_follow(self, query, page=1):
         result = self.search(query, page)
         return self.with_follow_state(result)
+
+    def followings(self, query='', page=1):
+        if not self.session.cookies.get_dict().get('SESSDATA'):
+            raise ValueError('请先登录 B 站，查看自己的关注列表。')
+        nav = self.get('https://api.bilibili.com/x/web-interface/nav')
+        if not nav.get('isLogin') or not nav.get('mid'):
+            raise ValueError('登录已过期，请重新扫码登录。')
+        params = {'vmid': nav['mid'], 'pn': page, 'ps': 50}
+        path = 'https://api.bilibili.com/x/relation/followings'
+        if query.strip():
+            path += '/search'
+            params['name'] = query.strip()
+        else:
+            params['order'] = 'desc'
+        data = self.get(path, **params)
+        accounts = data.get('list') or []
+        rooms, unavailable = {}, False
+        if accounts:
+            try:
+                rooms = self.get('https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids',
+                                 **{'uids[]': [item['mid'] for item in accounts]})
+                if not isinstance(rooms, dict):
+                    raise ValueError('Invalid room map')
+            except (ValueError, requests.RequestException):
+                rooms, unavailable = {}, True
+        result = []
+        for account in accounts:
+            info = rooms.get(str(account['mid'])) or {}
+            rid = info.get('room_id') or 0
+            result.append({'id': str(rid) if int(rid) > 0 else '', 'uid': account['mid'],
+                           'name': plain(account.get('uname')), 'face': safe_image(account.get('face', '')),
+                           'title': plain(info.get('title')), 'live': info.get('live_status') == 1,
+                           'following': True, 'room_known': not unavailable})
+        total = int(data.get('total') or 0)
+        return {'rooms': result, 'total': total, 'more': bool(accounts) and page * 50 < total,
+                'follow_state': 'ok', 'rooms_unavailable': unavailable}
 
     def with_follow_state(self, result):
         for room in result['rooms']:

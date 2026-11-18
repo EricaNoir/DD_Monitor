@@ -1,10 +1,13 @@
-from PySide6.QtCore import Qt, QThreadPool, QTimer
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton
+from PySide6.QtCore import QThreadPool, QTimer, Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton
 from .services import BiliAPI, Job
 from .icons import decorate
 
 
 class ChatComposer(QWidget):
+    feedback_changed = Signal(str)
+    message_sent = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ticket = 0
@@ -12,6 +15,7 @@ class ChatComposer(QWidget):
         self.api = None
         self.sending = False
         self.limit = 0
+        self.status_text = ''
         box = QVBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(3)
@@ -28,20 +32,14 @@ class ChatComposer(QWidget):
         self.button.clicked.connect(self.send)
         row.addWidget(self.button)
         box.addLayout(row)
-        self.hint = QLabel()
-        self.hint.setObjectName('Muted')
-        self.hint.setWordWrap(True)
-        self.hint.setTextFormat(Qt.PlainText)
-        self.hint.hide()
-        box.addWidget(self.hint)
         self.cooldown = QTimer(self)
         self.cooldown.setSingleShot(True)
         self.cooldown.timeout.connect(self.update_button)
         self.set_room(None, {})
 
     def status(self, text):
-        self.hint.setText(text)
-        self.hint.setVisible(bool(text))
+        self.status_text = text
+        self.feedback_changed.emit(text)
 
     def run_job(self, work, done, failed):
         job = Job(work)
@@ -76,7 +74,7 @@ class ChatComposer(QWidget):
 
     def limit_failed(self, ticket, error):
         # A background config read must never unlock an in-flight send.
-        if ticket == self.ticket and not self.sending and not self.hint.text():
+        if ticket == self.ticket and not self.sending and not self.status_text:
             self.status(error)
 
     def ready(self, ticket, limit):
@@ -90,7 +88,7 @@ class ChatComposer(QWidget):
         length = len(self.input.text().encode('utf-16-le')) // 2
         if self.limit and length > self.limit:
             self.status(f'超出字数：{length}/{self.limit}')
-        elif self.hint.text().startswith('超出字数：'):
+        elif self.status_text.startswith('超出字数：'):
             self.status('')
         self.button.setEnabled(bool(self.room and self.limit and self.input.text().strip())
                                and length <= self.limit
@@ -104,19 +102,20 @@ class ChatComposer(QWidget):
         self.input.setEnabled(False)
         self.update_button()
         self.status('发送中…')
-        self.run_job(lambda: api.send_chat(rid, text), lambda _: self.sent(ticket, text),
+        self.run_job(lambda: api.send_chat(rid, text), lambda result: self.sent(ticket, text, result.get('uid', '')),
                      lambda error: self.failed(ticket, error))
 
-    def sent(self, ticket, text):
+    def sent(self, ticket, text, uid=''):
         if ticket != self.ticket:
             return
         self.sending = False
         self.input.setEnabled(True)
         if self.input.text() == text:
             self.input.clear()
-        self.status('已发送')
+        self.status('')
         self.cooldown.start(1500)
         self.update_button()
+        self.message_sent.emit(str(uid), text.strip())
         self.input.setFocus()
 
     def failed(self, ticket, error):
