@@ -3,6 +3,7 @@ from PySide6.QtCore import QPoint, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QToolTip
 from .services import BiliAPI, Job
 from .icons import decorate
+from .theme import SIZES
 
 
 class ChatComposer(QWidget):
@@ -28,7 +29,8 @@ class ChatComposer(QWidget):
         self.input.returnPressed.connect(self.send)
         self.input.textChanged.connect(self.update_button)
         row.addWidget(self.input, 1)
-        self.button = decorate(QPushButton(), 'send', '发送弹幕 · Enter', 26)
+        self.input.setFixedHeight(SIZES['control'])
+        self.button = decorate(QPushButton(), 'send', '发送弹幕 · Enter', SIZES['control'])
         self.button.clicked.connect(self.send)
         row.addWidget(self.button)
         box.addLayout(row)

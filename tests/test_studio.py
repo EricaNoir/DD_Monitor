@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QPoint, QMimeData
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
+from studio.theme import stylesheet
 from studio.services import room_number, plain, safe_image, parse_chat, BiliAPI
 from studio.chat import message_html
 from studio.state import load_state, save_json
@@ -78,7 +79,7 @@ class UITests(unittest.TestCase):
             if font.exists():
                 QFontDatabase.addApplicationFont(str(font))
         cls.app.setStyle('Fusion')
-        cls.app.setStyleSheet((ROOT / 'studio/theme.qss').read_text(encoding='utf-8'))
+        cls.app.setStyleSheet(stylesheet())
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -91,6 +92,58 @@ class UITests(unittest.TestCase):
         self.window.close()
         self.app.processEvents()
         self.temp.cleanup()
+
+    def test_component_heights_align_and_sidebar_has_no_left_gutter(self):
+        w = self.window
+        self.assertEqual(w.layout_choice.height(), 32)
+        self.assertEqual(w.controls_toggle.height(), 32)
+        self.assertEqual(w.library.mapTo(w.centralWidget(), QPoint()).x(), 0)
+        tile = w.tiles[0]
+        self.assertEqual(tile.quality.height(), 28)
+        self.assertEqual(tile.play_button.height(), 28)
+        self.assertEqual(tile.composer.input.height(), tile.composer.button.height())
+        dialog = SearchDialog({}, 0, 4, w)
+        dialog.tabs.setCurrentIndex(1)
+        dialog.show()
+        self.app.processEvents()
+        self.assertEqual(dialog.follow_filter.height(), 32)
+        self.assertEqual(dialog.input.height(), dialog.search_button.height())
+        dialog.close()
+
+    def test_live_sc_spacing_matches_history_and_gift_icon_is_local(self):
+        from studio.chat import ChatView
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QTextDocument
+        live, history = ChatView(), ChatView()
+        messages = [{'name': '观众', 'text': '普通聊天'},
+                    {'kind': 'sc', 'price': '2', 'name': '示例观众', 'text': '这是一条比较长的留言，用来检查换行与气泡内边距。'},
+                    {'kind': 'sc', 'price': '2', 'name': '另一位观众', 'text': '喵'},
+                    {'name': '观众', 'text': '下一条普通聊天'},
+                    {'kind': 'gift', 'name': '示例观众', 'text': '赠送 粉丝团灯牌 × 1'}]
+        for view in (live, history):
+            view.resize(190, 440)
+            view.show()
+        for message in messages:
+            live.add_message(message)
+        history.show_history(messages)
+        self.app.processEvents()
+        a, b = live.document().begin(), history.document().begin()
+        while a.isValid() and b.isValid():
+            self.assertEqual(a.blockFormat().properties(), b.blockFormat().properties())
+            self.assertAlmostEqual(live.document().documentLayout().blockBoundingRect(a).height(),
+                                   history.document().documentLayout().blockBoundingRect(b).height(), delta=1)
+            a, b = a.next(), b.next()
+        with patch.object(live.network, 'get') as get:
+            glyph = live.loadResource(QTextDocument.ImageResource, QUrl('studio-icon:gift'))
+            self.assertFalse(glyph.isNull())
+            get.assert_not_called()
+        self.assertNotIn('礼物 ·', live.toPlainText())
+        folder = ROOT / '.qa'
+        folder.mkdir(exist_ok=True)
+        live.grab().save(str(folder / 'live-sc-spacing.png'))
+        history.grab().save(str(folder / 'history-sc-spacing.png'))
+        live.close()
+        history.close()
 
     def test_send_scrolls_to_latest_without_moving_chat_or_input(self):
         tile = self.window.tiles[0]

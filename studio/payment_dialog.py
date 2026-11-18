@@ -1,8 +1,8 @@
 from decimal import Decimal
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSpinBox, QPlainTextEdit, QFormLayout, QWidget, QFrame, QTabBar)
-from .widgets import BelowComboBox
+                               QPlainTextEdit, QFormLayout, QWidget, QFrame, QTabBar)
+from .widgets import BelowComboBox, StudioSpinBox as QSpinBox
 from .services import Job
 from .payments import PaymentAPI, PaymentUnknown, battery, gift_limit
 
@@ -35,7 +35,6 @@ class PaymentConfirmation(QDialog):
 
         summary = QFrame()
         summary.setObjectName('PaymentSummary')
-        summary.setStyleSheet('QFrame#PaymentSummary { background: #272727; border: 1px solid #3b3b3b; border-radius: 7px; }')
         details = QVBoxLayout(summary)
         details.setContentsMargins(16, 14, 16, 14)
         details.setSpacing(14)
@@ -45,12 +44,12 @@ class PaymentConfirmation(QDialog):
         details.addLayout(item)
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet('background: #3b3b3b; border: 0;')
+        line.setObjectName('Divider')
         details.addWidget(line)
         total = QHBoxLayout()
         total.addWidget(label('合计', 'Muted'), 1)
         amount = label(f'{battery(quote.total)} 电池')
-        amount.setStyleSheet('font-size: 21px; font-weight: 600;')
+        amount.setObjectName('Amount')
         total.addWidget(amount)
         details.addLayout(total)
         box.addWidget(summary)
@@ -59,7 +58,6 @@ class PaymentConfirmation(QDialog):
             message = QPlainTextEdit(quote.text)
             message.setReadOnly(True)
             message.setFixedHeight(110)
-            message.setStyleSheet('QPlainTextEdit { background: #272727; border: 1px solid #3b3b3b; border-radius: 5px; padding: 8px; }')
             box.addWidget(message)
         box.addWidget(label(f'付款账号  UID {quote.uid}', 'Muted'))
         box.addStretch(1)

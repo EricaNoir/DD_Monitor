@@ -8,6 +8,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+from studio.theme import stylesheet
 from studio.runtime import configure_vlc
 dll = configure_vlc(ROOT)
 import requests
@@ -27,7 +28,7 @@ if __name__ == '__main__':
     rid = sys.argv[1] if len(sys.argv) > 1 else '22603245'
     app = QApplication([])
     app.setStyle('Fusion')
-    app.setStyleSheet((ROOT / 'studio/theme.qss').read_text(encoding='utf-8'))
+    app.setStyleSheet(stylesheet())
     instance = vlc.Instance('--quiet', '--vout=dummy', '--aout=dummy')
     window = StudioWindow(ROOT, instance, demo=True)
     window.closed.connect(app.quit)

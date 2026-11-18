@@ -1,10 +1,12 @@
 from pathlib import Path
 from PySide6.QtCore import Qt, QThreadPool, Signal, QSize
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QLineEdit, QListWidget, QListWidgetItem, QAbstractItemView, QTabBar)
+                               QLineEdit, QListWidget, QListWidgetItem, QAbstractItemView, QTabBar, QToolButton)
 from .services import BiliAPI, Job
 from .sidebar import AvatarStore, SearchResultDelegate, FavoritesStrip
 from .widgets import BelowComboBox
+from .icons import icon
+from .theme import SIZES
 
 
 def label(text, kind='Muted'):
@@ -60,6 +62,10 @@ class SearchDialog(QDialog):
         row = QHBoxLayout()
         self.input = QLineEdit()
         self.input.setClearButtonEnabled(True)
+        self.input.setFixedHeight(SIZES['control'])
+        for clear in self.input.findChildren(QToolButton):
+            clear.setIcon(icon('close'))
+            clear.setIconSize(QSize(SIZES['inline_icon'], SIZES['inline_icon']))
         self.input.setPlaceholderText('搜索我关注的 UP 主，留空查看全部关注')
         self.input.returnPressed.connect(self.search)
         self.input.textEdited.connect(self.input_edited)

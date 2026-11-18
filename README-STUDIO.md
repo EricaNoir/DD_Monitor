@@ -2,6 +2,8 @@
 
 DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索、可折叠主播库和控制条，以及浏览器式固定弹幕列表。
 
+界面颜色、字体、尺寸与图标共用 `studio/theme.py` 中的设计 token。组件约定和自动检查说明见 [设计约定](docs/DESIGN.md)。
+
 ## 使用
 
 双击 `run-studio.cmd`。首次配置先运行 `setup-studio.ps1`，需要 Windows 64 位和 Python 3.10–3.13。

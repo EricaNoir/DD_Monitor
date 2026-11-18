@@ -34,11 +34,6 @@ class SCOverlay(QFrame):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet('''QFrame#SCOverlay { background: transparent; }
-            QFrame#SCCard { background: rgba(38,35,29,235); border: 1px solid #65563b; border-radius: 6px; }
-            QLabel { background: transparent; color: #f3ead8; border: 0; font-size: 12px; }
-            QProgressBar { background: #494033; border: 0; border-radius: 1px; }
-            QProgressBar::chunk { background: #c5a669; border-radius: 1px; }''')
         self.box = QVBoxLayout(self)
         self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(6)

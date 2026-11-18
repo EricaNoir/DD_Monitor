@@ -1,3 +1,4 @@
+from .theme import stylesheet, SIZES
 import io
 import json
 from pathlib import Path
@@ -6,13 +7,13 @@ from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal, QSize, QPoint
 from PySide6.QtGui import QFont, QKeySequence, QPixmap, QShortcut, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
-    QAbstractItemView, QDialog, QSplitter, QCheckBox, QSpinBox, QSlider, QMessageBox)
+    QAbstractItemView, QDialog, QSplitter, QCheckBox, QSlider, QMessageBox)
 from .services import BiliAPI, Job
 from .player import PlayerTile
 from .sidebar import RoomList, AvatarStore
 from .search_dialog import SearchDialog
 from .icons import decorate, icon
-from .widgets import BelowComboBox as QComboBox
+from .widgets import BelowComboBox as QComboBox, StudioSpinBox as QSpinBox
 from .payment_dialog import PaymentDialog
 from .payments import PaymentAPI
 from .state import load_state, save_json, load_credentials
@@ -140,8 +141,8 @@ class StudioWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setObjectName('Header')
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(16, 10, 16, 10)
-        header.setSpacing(10)
+        header.setContentsMargins(5, SIZES['gap'], 12, SIZES['gap'])
+        header.setSpacing(SIZES['gap'])
         self.library_toggle = button('', checkable=True)
         self.library_toggle.setFixedSize(32, 32)
         decorate(self.library_toggle, 'sidebar', '展开或收起主播侧栏', 32)
@@ -204,7 +205,7 @@ class StudioWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         content = QHBoxLayout()
-        content.setContentsMargins(10, 8, 10, 8)
+        content.setContentsMargins(0, SIZES['gap'], SIZES['gap'], SIZES['gap'])
         content.addWidget(self.splitter)
         outer.addLayout(content, 1)
 
@@ -304,7 +305,7 @@ class StudioWindow(QMainWindow):
         box.addWidget(self.library_play)
         self.library_remove = button('移出主播库', self.remove_library)
         box.addWidget(self.library_remove)
-        self.library_add = button('＋ 添加直播间', lambda: self.open_search(self.active))
+        self.library_add = button('添加直播间', lambda: self.open_search(self.active))
         self.library_add.setObjectName('SidebarAdd')
         self.library_add.setMinimumHeight(36)
         self.library_add.setToolTip('添加直播间  Ctrl+K')
@@ -565,7 +566,7 @@ class StudioWindow(QMainWindow):
         self.library_empty.setVisible(shown and not self.favorites)
         self.library_add.setText('添加直播间' if shown else '')
         self.library_add.setIcon(icon('add'))
-        self.library_add.setIconSize(QSize(18, 18))
+        self.library_add.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
         self.library_add.setStyleSheet('' if shown else 'padding: 0; text-align: center;')
         self.library_toggle.setToolTip(('收起到头像栏' if shown else '展开主播侧栏') + '  Ctrl+B')
         self.room_list.set_collapsed(not shown)
@@ -574,7 +575,7 @@ class StudioWindow(QMainWindow):
             self.library.setMaximumWidth(420)
             width = getattr(self, 'library_width', 235)
         else:
-            self.library.setFixedWidth(42)
+            self.library.setFixedWidth(SIZES['rail'])
             width = 42
         self.splitter.setSizes([width, max(400, sum(sizes) - width)])
         self.refresh_library()
@@ -725,7 +726,7 @@ def main(root, demo=False):
     app.setApplicationName('DD Monitor Studio')
     app.setWindowIcon(QIcon(str(root / 'favicon.ico')))
     app.setStyle('Fusion')
-    app.setStyleSheet((root / 'studio' / 'theme.qss').read_text(encoding='utf-8'))
+    app.setStyleSheet(stylesheet())
     instance = None
     if not demo:
         instance = create_vlc_instance()

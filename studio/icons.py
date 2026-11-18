@@ -1,27 +1,32 @@
 """One consistent set of 24px outline icons, rendered crisply at HiDPI."""
 from math import cos, sin, pi
 from PySide6.QtCore import Qt, QRectF, QPointF, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QPainterPath, QPolygonF
+from PySide6.QtGui import QIcon, QPixmap, QImage, QPainter, QPen, QColor, QPainterPath, QPolygonF
+from .theme import COLORS, SIZES, ICON_STROKE
 
 _cache = {}
+_images = {}
 
 
-def icon(name):
-    if name in _cache:
-        return _cache[name]
-    image = QPixmap(48, 48)
+def icon_image(name, size=18, color=None, dpr=2):
+    color = color or COLORS['icon']
+    key = (name, size, color, dpr)
+    if key in _images:
+        return _images[key]
+    image = QImage(size * dpr, size * dpr, QImage.Format_ARGB32_Premultiplied)
     image.fill(Qt.transparent)
-    image.setDevicePixelRatio(2)
+    image.setDevicePixelRatio(dpr)
     p = QPainter(image)
+    p.scale(size / 24, size / 24)
     p.setRenderHint(QPainter.Antialiasing)
-    p.setPen(QPen(QColor('#dcdcdc'), 1.65, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setPen(QPen(QColor(color), ICON_STROKE, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(Qt.NoBrush)
     def line(x1, y1, x2, y2):
         p.drawLine(QPointF(x1,y1), QPointF(x2,y2))
     def circle(x,y,r):
         p.drawEllipse(QPointF(x,y),r,r)
     if name == 'pause':
-        p.drawRoundedRect(QRectF(6,5,3,14),.6,.6); p.drawRoundedRect(QRectF(15,5,3,14),.6,.6)
+        line(8,5,8,19); line(16,5,16,19)
     elif name == 'play':
         p.drawPolygon(QPolygonF([QPointF(7,4),QPointF(19,12),QPointF(7,20)]))
     elif name in ('volume','muted'):
@@ -55,7 +60,14 @@ def icon(name):
     elif name == 'add':
         line(5,12,19,12); line(12,5,12,19)
     elif name == 'close':
-        line(6,6,18,18); line(18,6,6,18)
+        line(5,5,19,19); line(19,5,5,19)
+    elif name in ('chevron_down', 'chevron_up'):
+        if name == 'chevron_down':
+            line(6,9,12,15); line(12,15,18,9)
+        else:
+            line(6,15,12,9); line(12,9,18,15)
+    elif name == 'check':
+        line(5,12,10,17); line(10,17,19,7)
     elif name == 'more':
         for x in (5,12,19): circle(x,12,.9)
     elif name == 'info':
@@ -68,9 +80,12 @@ def icon(name):
         for x,y in [(5,9),(12,16),(19,7)]:
             line(x,4,x,y-2); line(x,y+2,x,20); circle(x,y,2)
     elif name == 'settings':
-        circle(12,12,6); circle(12,12,2)
+        points = []
         for i in range(8):
-            a=i*pi/4; line(12+7*cos(a),12+7*sin(a),12+9*cos(a),12+9*sin(a))
+            for offset, radius in ((-2,7),(-1,9),(1,9),(2,7)):
+                a = (i * 6 + offset) * pi / 24
+                points.append(QPointF(12 + radius*cos(a), 12 + radius*sin(a)))
+        p.drawPolygon(QPolygonF(points)); circle(12,12,3)
     elif name == 'bottom':
         line(12,4,12,16); line(7,11,12,16); line(17,11,12,16); line(5,20,19,20)
     elif name == 'trash':
@@ -83,23 +98,43 @@ def icon(name):
             r=9 if i%2==0 else 4.3
             points.append(QPointF(12+r*cos(angle),12+r*sin(angle)))
         if name == 'star_filled':
-            p.setBrush(QColor('#d9c794'))
-            p.setPen(QPen(QColor('#d9c794'),1.5))
+            p.setBrush(QColor(COLORS['favorite']))
+            p.setPen(QPen(QColor(COLORS['favorite']), ICON_STROKE, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         p.drawPolygon(QPolygonF(points))
     else:
         p.end()
         raise ValueError(f'Unknown icon: {name}')
     p.end()
-    result=QIcon(image)
-    _cache[name]=result
+    _images[key] = image
+    return image
+
+
+def icon(name, color=None):
+    key = (name, color)
+    if key in _cache:
+        return _cache[key]
+    result = QIcon()
+    for size in (12, 16, 18, 24, 32):
+        result.addPixmap(QPixmap.fromImage(icon_image(name, size, color)))
+        result.addPixmap(QPixmap.fromImage(icon_image(name, size, COLORS['text_disabled'])), QIcon.Disabled)
+    _cache[key] = result
     return result
 
 
-def decorate(button, name, description, size=28):
+def paint_icon(painter, name, rect, size=None, color=None):
+    size = size or SIZES['icon']
+    target = QRectF(0, 0, size, size)
+    target.moveCenter(QRectF(rect).center())
+    icon(name, color).paint(painter, target.toRect())
+
+
+def decorate(button, name, description, size=None):
     button.setText('')
     button.setProperty('iconOnly', True)
     button.setIcon(icon(name))
-    button.setIconSize(QSize(18,18))
+    button.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
+    size = size or SIZES['compact']
+    button.setProperty('density', 'regular' if size == SIZES['control'] else 'compact')
     button.setFixedSize(size,size)
     button.setToolTip(description)
     button.setAccessibleName(description)

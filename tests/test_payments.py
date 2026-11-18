@@ -10,6 +10,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import requests
 from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtGui import QFontDatabase
+from studio.theme import stylesheet
 from studio.payments import PaymentAPI, PaymentUnknown, Quote, battery, gift_limit
 from studio.payment_dialog import PaymentDialog, PaymentConfirmation
 from studio.services import parse_activity
@@ -144,7 +145,7 @@ class PaymentUITests(unittest.TestCase):
         for font in ('msyh.ttc', 'msyhbd.ttc'):
             QFontDatabase.addApplicationFont(str(Path('C:/Windows/Fonts') / font))
         cls.app.setStyle('Fusion')
-        cls.app.setStyleSheet((ROOT / 'studio/theme.qss').read_text(encoding='utf-8'))
+        cls.app.setStyleSheet(stylesheet())
 
     def setUp(self):
         self.dialog = PaymentDialog({'id': '123', 'name': '示例主播'}, {}, autoload=False)

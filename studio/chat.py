@@ -1,6 +1,8 @@
+from .theme import COLORS, SIZES
+from .icons import icon_image
 import html
 from PySide6.QtCore import QUrl, Qt, QRectF
-from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextFormat, QPainter, QColor
+from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextFormat, QTextBlockFormat, QPainter, QColor
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import QTextBrowser
 from .services import safe_image
@@ -12,13 +14,15 @@ def message_html(message, names=True):
     text = html.escape(message.get('text', ''))
     if message.get('kind') == 'gift':
         sender = name + ' ' if names else ''
-        return f'<p style="margin:6px 0;color:#cbbd98;">礼物 · {sender}{text}</p>'
+        size = SIZES['inline_icon']
+        return (f'<p style="margin:6px 0;color:{COLORS["gift"]};">'
+                f'<img src="studio-icon:gift" width="{size}" height="{size}" alt="礼物" style="vertical-align:middle;">&nbsp;{sender}{text}</p>')
     if message.get('kind') == 'sc':
         price = html.escape(str(message.get('price', '')))
         sender = ' · ' + name if names else ''
         return (f'<p style="margin:20px 10px;line-height:145%;">'
-                f'<span style="color:#e8cd91;font-weight:600;">SC ¥{price}{sender}</span>'
-                f'<br><span style="color:#f0e9db;">{text.replace(chr(10), "<br>")}</span></p>')
+                f'<span style="color:{COLORS["sc_heading"]};font-weight:600;">SC ¥{price}{sender}</span>'
+                f'<br><span style="color:{COLORS["sc_text"]};">{text.replace(chr(10), "<br>")}</span></p>')
     for token, url in sorted(message.get('images', {}).items(), key=lambda pair: -len(pair[0])):
         url = safe_image(url)
         if url:
@@ -28,9 +32,9 @@ def message_html(message, names=True):
         text = f'<img width="48" height="48" alt="{text}" src="{html.escape(emoji, quote=True)}">'
     medal = ''
     if names and message.get('medal'):
-        medal = f'<span style="color:#bba5d2;font-style:italic;">{html.escape(message["medal"])} {html.escape(message.get("level", ""))}</span>&nbsp;&nbsp;'
-    sender = f'<span style="color:#a9a9a9;">{name}</span><span style="color:#888888;">：</span>' if names else ''
-    return f'<p style="margin:6px 0;line-height:140%;">{medal}{sender}<span style="color:#dedede;">{text}</span></p>'
+        medal = f'<span style="color:{COLORS["medal"]};font-style:italic;">{html.escape(message["medal"])} {html.escape(message.get("level", ""))}</span>&nbsp;&nbsp;'
+    sender = f'<span style="color:{COLORS["text_secondary"]};">{name}</span><span style="color:{COLORS["focus"]};">：</span>' if names else ''
+    return f'<p style="margin:6px 0;line-height:140%;">{medal}{sender}<span style="color:{COLORS["text"]};">{text}</span></p>'
 
 
 class ChatView(QTextBrowser):
@@ -41,6 +45,7 @@ class ChatView(QTextBrowser):
         self.setOpenExternalLinks(False)
         self.setReadOnly(True)
         self.document().setMaximumBlockCount(500)
+        self.set_document_padding()
         configure_qt_tls()
         self.network = QNetworkAccessManager(self)
         self.pending = set()
@@ -49,9 +54,18 @@ class ChatView(QTextBrowser):
         self.names = True
         self.setPlaceholderText('等待这个直播间的消息')
 
+    def set_document_padding(self):
+        frame = self.document().rootFrame()
+        fmt = frame.frameFormat()
+        fmt.setTopMargin(10)
+        fmt.setBottomMargin(10)
+        frame.setFrameFormat(fmt)
+
     def loadResource(self, resource_type, url):
         if resource_type != QTextDocument.ImageResource:
             return super().loadResource(resource_type, url)
+        if url.toString() == 'studio-icon:gift':
+            return icon_image('gift', SIZES['inline_icon'], COLORS['gift'])
         address = safe_image(url.toString())
         if not address:
             return QImage()
@@ -92,6 +106,7 @@ class ChatView(QTextBrowser):
     def show_history(self, history):
         messages = list(history)[-500:]
         self.setHtml(''.join(message_html(message, self.names) for message in messages))
+        self.set_document_padding()
         block = self.document().begin()
         for message in messages:
             self.mark_bubble(block, message)
@@ -101,7 +116,18 @@ class ChatView(QTextBrowser):
     def mark_bubble(self, block, message):
         cursor = QTextCursor(block)
         fmt = block.blockFormat()
-        fmt.setProperty(self.SC_BUBBLE, message.get('kind') == 'sc')
+        is_sc = message.get('kind') == 'sc'
+        fmt.setProperty(self.SC_BUBBLE, is_sc)
+        # append() does not reliably retain the first <p>'s HTML margins.
+        # Explicit block formats keep live arrivals identical to rebuilt history.
+        padding, gap = SIZES['bubble_padding'], SIZES['message_gap']
+        fmt.setLeftMargin(padding if is_sc else 0)
+        fmt.setRightMargin(padding if is_sc else 0)
+        previous = block.previous()
+        previous_sc = previous.isValid() and previous.blockFormat().property(self.SC_BUBBLE)
+        fmt.setTopMargin(gap + (padding if is_sc else 0) + (padding if previous_sc else 0))
+        fmt.setBottomMargin(0)
+        fmt.setLineHeight(140, QTextBlockFormat.ProportionalHeight.value)
         cursor.setBlockFormat(fmt)
 
     def paintEvent(self, event):
@@ -110,8 +136,8 @@ class ChatView(QTextBrowser):
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setClipRect(event.rect())
-        painter.setBrush(QColor('#34312b'))
-        painter.setPen(QColor('#484238'))
+        painter.setBrush(QColor(COLORS['sc_surface']))
+        painter.setPen(QColor(COLORS['sc_border']))
         block = self.document().begin()
         layout = self.document().documentLayout()
         while block.isValid():
@@ -121,10 +147,11 @@ class ChatView(QTextBrowser):
                 if rect.bottom() >= 0 and rect.top() <= self.viewport().height():
                     lines = block.layout()
                     width = max((lines.lineAt(i).naturalTextWidth() for i in range(lines.lineCount())), default=0)
-                    top = max(1, rect.top() - 7) if block == self.document().begin() else rect.top() - 7
-                    bubble = QRectF(rect.left() + 2, top,
-                                    min(rect.width() - 4, width + 16), rect.bottom() + 7 - top)
-                    painter.drawRoundedRect(bubble, 8, 8)
+                    padding = SIZES['bubble_padding']
+                    available = rect.width() + block.blockFormat().leftMargin() + block.blockFormat().rightMargin()
+                    bubble = QRectF(rect.left(), rect.top() - padding,
+                                    min(available, width + 2 * padding), rect.height() + 2 * padding)
+                    painter.drawRoundedRect(bubble, SIZES['bubble_radius'], SIZES['bubble_radius'])
             block = block.next()
         painter.end()
         super().paintEvent(event)

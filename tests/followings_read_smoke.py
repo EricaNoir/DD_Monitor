@@ -7,6 +7,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+from studio.theme import stylesheet
 from studio.runtime import isolate_process
 isolate_process(ROOT)
 import requests
@@ -37,7 +38,7 @@ if __name__ == '__main__':
         for name in ('msyh.ttc','msyhbd.ttc'):
             QFontDatabase.addApplicationFont(str(Path('C:/Windows/Fonts') / name))
         app.setStyle('Fusion')
-        app.setStyleSheet((ROOT/'studio/theme.qss').read_text(encoding='utf-8'))
+        app.setStyleSheet(stylesheet())
         window = StudioWindow(ROOT, demo=True)
         window.cookies = cookies
         window.avatars.enabled = True

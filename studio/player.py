@@ -1,3 +1,4 @@
+from .theme import COLORS, SIZES
 from collections import deque
 import time
 from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool, QMimeData
@@ -88,7 +89,7 @@ class PlayerTile(QFrame):
         layout.setSpacing(0)
         self.toolbar = QWidget()
         self.toolbar.setObjectName('TileToolbar')
-        self.toolbar.setFixedHeight(36)
+        self.toolbar.setFixedHeight(SIZES['tile_toolbar'])
         header = QHBoxLayout(self.toolbar)
         header.setContentsMargins(6, 3, 6, 3)
         header.setSpacing(3)
@@ -139,7 +140,9 @@ class PlayerTile(QFrame):
         self.empty_hint.setAlignment(Qt.AlignCenter)
         self.empty_hint.setWordWrap(True)
         empty_layout.addWidget(self.empty_hint)
-        self.empty_add = QPushButton('＋ 添加直播间')
+        self.empty_add = QPushButton('添加直播间')
+        self.empty_add.setIcon(icon('add', COLORS['inverse']))
+        self.empty_add.setIconSize(self.remove.iconSize())
         self.empty_add.setObjectName('Primary')
         self.empty_add.clicked.connect(lambda: self.add_requested.emit(self.index))
         empty_layout.addWidget(self.empty_add, alignment=Qt.AlignCenter)
@@ -216,7 +219,7 @@ class PlayerTile(QFrame):
         self.solo.clicked.connect(lambda: self.solo_requested.emit(self.index))
         decorate(self.solo, 'headphones', '只听这个直播间')
         controls.addWidget(self.solo)
-        self.quality = QComboBox()
+        self.quality = QComboBox(compact=True)
         for title, value in [('流畅', 80), ('超清', 250), ('蓝光', 400), ('原画', 10000)]:
             self.quality.addItem(title, value)
         self.quality.setCurrentIndex(1)
@@ -281,7 +284,7 @@ class PlayerTile(QFrame):
         details = (self.room.get('name', '') + ' · ' + self.room.get('title', '') + '\n' if self.room else '') + text
         self.name.setToolTip(details)
         self.status_light.setToolTip(details)
-        color = '#70bd91' if text.startswith('直播中') else ('#d8a074' if '失败' in text or '超时' in text else '#8b8b8b')
+        color = COLORS['live'] if text.startswith('直播中') else (COLORS['warning'] if '失败' in text or '超时' in text else COLORS['text_muted'])
         self.status_light.setStyleSheet(f'color: {color};')
 
     def remember_chat_width(self, *_):

@@ -5,6 +5,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from studio.theme import stylesheet
 from studio.runtime import isolate_process
 isolate_process(ROOT)
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -18,7 +19,7 @@ app = QApplication([])
 for name in ('msyh.ttc', 'msyhbd.ttc'):
     QFontDatabase.addApplicationFont(str(Path(os.environ['WINDIR']) / 'Fonts' / name))
 app.setStyle('Fusion')
-app.setStyleSheet((ROOT / 'studio/theme.qss').read_text(encoding='utf-8'))
+app.setStyleSheet(stylesheet())
 with ThreadPoolExecutor(max_workers=3) as pool:
     rooms = list(pool.map(lambda rid: BiliAPI().room(rid), ['31294374', '4792266', '6524090', '30040584']))
 window = StudioWindow(ROOT, demo=True)
