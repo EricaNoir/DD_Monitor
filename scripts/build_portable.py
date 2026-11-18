@@ -67,7 +67,7 @@ def main():
         with zipfile.ZipFile(source_zip) as source:
             source.extractall(package)
         config = json.loads((package / 'packaging/windows-runtime.json').read_text('utf-8'))
-        python_archive, vlc_archive = work / 'python.zip', work / 'vlc.7z'
+        python_archive, vlc_archive = work / 'python.zip', work / 'vlc.zip'
         download(config['python'], python_archive)
         download(config['vlc'], vlc_archive)
         python = package / 'python'
@@ -77,7 +77,8 @@ def main():
         (python / 'python313._pth').write_text('python313.zip\n.\nLib/site-packages\n..\n', encoding='ascii')
         runtime = package / 'runtime'
         runtime.mkdir()
-        run('tar', '-xf', vlc_archive, '-C', runtime)
+        with zipfile.ZipFile(vlc_archive) as source:
+            source.extractall(runtime)
         (runtime / ('vlc-' + config['vlc']['version'])).rename(runtime / 'vlc')
         lock = package / 'packaging/requirements-windows.lock'
         run(sys.executable, '-m', 'pip', 'install', '--isolated', '--index-url', 'https://pypi.org/simple',
