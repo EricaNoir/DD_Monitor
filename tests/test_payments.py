@@ -8,10 +8,10 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import requests
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtGui import QFontDatabase
 from studio.payments import PaymentAPI, PaymentUnknown, Quote, battery, gift_limit
-from studio.payment_dialog import PaymentDialog
+from studio.payment_dialog import PaymentDialog, PaymentConfirmation
 from studio.services import parse_activity
 from studio.chat import ChatView, message_html
 
@@ -160,7 +160,7 @@ class PaymentUITests(unittest.TestCase):
         d.set_busy(True)
         d.prepare()
         d.run_job.assert_not_called()
-        with patch.object(QMessageBox, 'exec', return_value=QMessageBox.Cancel):
+        with patch.object(PaymentConfirmation, 'exec', return_value=QDialog.Rejected):
             d.confirm(Quote('gift', 123, 456, 99, '礼物', 7, 100, 1))
         d.run_job.assert_not_called()
         self.assertFalse(d.busy)

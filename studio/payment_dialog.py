@@ -1,10 +1,83 @@
 from decimal import Decimal
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSpinBox, QPlainTextEdit, QMessageBox, QFormLayout, QWidget)
+                               QSpinBox, QPlainTextEdit, QFormLayout, QWidget, QFrame)
 from .widgets import BelowComboBox
 from .services import Job
 from .payments import PaymentAPI, PaymentUnknown, battery, gift_limit
+
+
+class PaymentConfirmation(QDialog):
+    def __init__(self, room, quote, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('确认使用电池')
+        self.setMinimumWidth(420)
+        self.resize(440, 340 if not quote.text else 470)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(24, 22, 24, 20)
+        box.setSpacing(18)
+
+        def label(text, kind=None):
+            widget = QLabel(text)
+            widget.setTextFormat(Qt.PlainText)
+            widget.setWordWrap(True)
+            if kind:
+                widget.setObjectName(kind)
+            return widget
+
+        box.addWidget(label('确认发送 SC' if quote.kind == 'sc' else '确认送礼', 'Heading'))
+        recipient = QVBoxLayout()
+        recipient.setSpacing(5)
+        recipient.addWidget(label('发送给', 'Muted'))
+        recipient.addWidget(label(str(room['name']), 'Heading'))
+        recipient.addWidget(label(f'直播间 {quote.room_id}', 'Muted'))
+        box.addLayout(recipient)
+
+        summary = QFrame()
+        summary.setObjectName('PaymentSummary')
+        summary.setStyleSheet('QFrame#PaymentSummary { background: #272727; border: 1px solid #3b3b3b; border-radius: 7px; }')
+        details = QVBoxLayout(summary)
+        details.setContentsMargins(16, 14, 16, 14)
+        details.setSpacing(14)
+        item = QHBoxLayout()
+        item.addWidget(label(quote.name), 1)
+        item.addWidget(label(f'× {quote.quantity}', 'Muted'))
+        details.addLayout(item)
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet('background: #3b3b3b; border: 0;')
+        details.addWidget(line)
+        total = QHBoxLayout()
+        total.addWidget(label('合计', 'Muted'), 1)
+        amount = label(f'{battery(quote.total)} 电池')
+        amount.setStyleSheet('font-size: 21px; font-weight: 600;')
+        total.addWidget(amount)
+        details.addLayout(total)
+        box.addWidget(summary)
+
+        if quote.text:
+            message = QPlainTextEdit(quote.text)
+            message.setReadOnly(True)
+            message.setFixedHeight(110)
+            message.setStyleSheet('QPlainTextEdit { background: #272727; border: 1px solid #3b3b3b; border-radius: 5px; padding: 8px; }')
+            box.addWidget(message)
+        box.addWidget(label(f'付款账号  UID {quote.uid}', 'Muted'))
+        box.addStretch(1)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        footer.addStretch()
+        self.cancel_button = QPushButton('取消')
+        self.cancel_button.setDefault(True)
+        self.cancel_button.clicked.connect(self.reject)
+        footer.addWidget(self.cancel_button)
+        self.confirm_button = QPushButton(f'确认发送 · {battery(quote.total)} 电池')
+        self.confirm_button.setObjectName('Primary')
+        self.confirm_button.setAutoDefault(False)
+        self.confirm_button.clicked.connect(self.accept)
+        footer.addWidget(self.confirm_button)
+        box.addLayout(footer)
+        self.cancel_button.setFocus()
 
 
 class PaymentDialog(QDialog):
@@ -170,20 +243,8 @@ class PaymentDialog(QDialog):
         self.run_job(lambda: self.api.prepare(self.room['id'], kind, entry['id'], count, text), self.confirm)
 
     def confirm(self, quote):
-        message = (f'主播：{self.room["name"]}\n房间：{quote.room_id}\n'
-                   f'付款账号：UID {quote.uid}\n'
-                   f'{quote.name} × {quote.quantity}\n消耗：{battery(quote.total)} 电池')
-        if quote.text:
-            message += '\n\n' + quote.text
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle('确认使用电池')
-        confirm.setTextFormat(Qt.PlainText)
-        confirm.setText(message)
-        confirm.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        confirm.button(QMessageBox.Ok).setText(f'发送 · {battery(quote.total)} 电池')
-        confirm.button(QMessageBox.Cancel).setText('取消')
-        confirm.setDefaultButton(QMessageBox.Cancel)
-        if confirm.exec() != QMessageBox.Ok:
+        confirm = PaymentConfirmation(self.room, quote, self)
+        if confirm.exec() != QDialog.Accepted:
             self.set_busy(False)
             self.status.setText('已取消，未发送。')
             return
