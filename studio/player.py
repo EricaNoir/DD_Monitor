@@ -259,6 +259,9 @@ class PlayerTile(QFrame):
         self.monitor = QTimer(self)
         self.monitor.timeout.connect(self.monitor_playback)
         self.monitor.start(1000)
+        self.audio_startup = QTimer(self)
+        self.audio_startup.setInterval(50)
+        self.audio_startup.timeout.connect(self.finish_audio_startup)
         self.apply_audio()
         self.update_toolbar()
 
@@ -323,9 +326,27 @@ class PlayerTile(QFrame):
             if force or self._audio_volume != volume:
                 if self.player.audio_set_volume(volume) == 0:
                     self._audio_volume = volume
+                else:
+                    # Never unmute an output until its intended volume is set.
+                    self._audio_volume = self._audio_muted = None
+                    self.player.audio_set_mute(True)
+                    return False
             if force or self._audio_muted != muted:
                 self.player.audio_set_mute(muted)
                 self._audio_muted = muted
+            return True
+        return False
+
+    def finish_audio_startup(self):
+        if not self.player or not self._audio_pending:
+            self.audio_startup.stop()
+            return
+        state = str(self.player.get_state()).split('.')[-1]
+        if state in ('Playing', 'Paused') and self.apply_audio(force=True):
+            self._audio_pending = False
+            self.audio_startup.stop()
+        elif state in ('Error', 'Ended'):
+            self.audio_startup.stop()
 
     def toggle_pause(self):
         if not self.room:
@@ -403,12 +424,14 @@ class PlayerTile(QFrame):
         media.add_option(':http-user-agent=Mozilla/5.0')
         media.add_option(':http-referrer=https://live.bilibili.com/')
         self.player.set_media(media)
+        self._audio_volume = self._audio_muted = None
+        self.apply_audio(force=True)
         self.player.play()
         self._audio_pending = True
+        self.audio_startup.start()
         media.release()
         self.stack.setCurrentIndex(1)
         self.set_status('正在缓冲…')
-        self.apply_audio(force=True)
 
     def failed(self, ticket, error):
         if ticket != self.generation:
@@ -422,8 +445,9 @@ class PlayerTile(QFrame):
             return
         state = str(self.player.get_state()).split('.')[-1]
         if state == 'Playing':
-            self.apply_audio(force=self._audio_pending)
-            self._audio_pending = False
+            if self.apply_audio(force=self._audio_pending):
+                self._audio_pending = False
+                self.audio_startup.stop()
             if self.paused or self.suspended:
                 self.player.set_pause(True)
             self.set_status('直播中  ·  ' + self.room.get('title', ''))
@@ -513,6 +537,7 @@ class PlayerTile(QFrame):
         worker.deleteLater()
 
     def clear(self, emit=True):
+        self.audio_startup.stop()
         self.generation += 1
         self.request_pending = False
         if self.player:

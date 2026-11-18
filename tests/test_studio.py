@@ -564,6 +564,31 @@ class UITests(unittest.TestCase):
         w.swap_tiles(0, 8)
         self.assertEqual(w.tiles, unchanged)
 
+    def test_audio_startup_never_unmutes_before_volume_succeeds(self):
+        tile = self.window.tiles[0]
+        tile.volume.setValue(17)
+        tile.player = Mock()
+        tile.player.audio_set_volume.return_value = -1
+        tile.player.get_state.return_value = 'State.Playing'
+        tile._audio_pending = True
+        tile.audio_startup.start()
+        tile.finish_audio_startup()
+        self.assertTrue(tile._audio_pending)
+        self.assertTrue(tile.audio_startup.isActive())
+        tile.player.audio_set_mute.assert_called_once_with(True)
+        tile.player.reset_mock()
+        tile.player.audio_set_volume.return_value = 0
+        tile.finish_audio_startup()
+        self.assertFalse(tile._audio_pending)
+        self.assertFalse(tile.audio_startup.isActive())
+        self.assertEqual([c[0] for c in tile.player.mock_calls][-2:], ['audio_set_volume', 'audio_set_mute'])
+        tile.player.audio_set_volume.assert_called_once_with(17)
+        tile.player.audio_set_mute.assert_called_once_with(False)
+        tile.player.reset_mock()
+        tile.monitor_playback()
+        tile.player.audio_set_volume.assert_not_called()
+        tile.player.audio_set_mute.assert_not_called()
+
     def test_single_mute_does_not_write_other_players_or_repeat_each_tick(self):
         w = self.window
         a, b = w.tiles[:2]

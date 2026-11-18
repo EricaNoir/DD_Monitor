@@ -37,6 +37,7 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 .\.venv\Scripts\python.exe tests\tls_smoke.py
 .\.venv\Scripts\python.exe tests\avatar_smoke.py
 .\.venv\Scripts\python.exe tests\audio_smoke.py
+.\.venv\Scripts\python.exe tests\audio_startup_smoke.py
 .\.venv\Scripts\python.exe tests\payment_read_smoke.py
 .\.venv\Scripts\python.exe tests\chat_features_read_smoke.py 22603245
 .\.venv\Scripts\python.exe tests\followings_read_smoke.py
@@ -54,7 +55,7 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 
 `followings_read_smoke.py` 只读验证真实关注列表的首页与末页、关注内搜索和新添加窗口的头像布局，不改变 B 站关注关系。对应离线测试还覆盖取消收藏后的延迟移除、侧栏右键操作、无直播间账号和侧栏可见房间标记。
 
-`audio_smoke.py` 使用本地无声 PCM 验证真实 Windows 音频输出的独立静音、音量和播放进度，不访问网络。Studio 使用 DirectSound 的独立缓冲区控制每个窗口，避免 VLC MMDevice 的共享会话静音/音量互相覆盖；状态轮询不会重复写入未改变的音频设置。音频实现可参见 VLC 的 [MMDevice](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/mmdevice.c) 和 [DirectSound](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/directsound.c) 源码。
+`audio_smoke.py` 使用本地无声 PCM 验证真实 Windows 音频输出的独立静音、音量和播放进度，不访问网络。`audio_startup_smoke.py` 验证音频输出重建时以零音量启动，以及多个窗口首次播放、重连时恢复各自保存的音量和静音状态，不发生音量越限。Studio 使用 DirectSound 的独立缓冲区控制每个窗口，避免 VLC MMDevice 的共享会话静音/音量互相覆盖；音量设置成功后才允许解除静音，启动补设完成后停止快速检查，正常状态轮询不会重复写入未改变的音频设置。音频实现可参见 VLC 的 [MMDevice](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/mmdevice.c) 和 [DirectSound](https://github.com/videolan/vlc/blob/3.0.x/modules/audio_output/directsound.c) 源码。
 
 ## 来源
 

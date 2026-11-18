@@ -60,5 +60,8 @@ def create_vlc_instance(*extra_options):
     import vlc
     # MMDevice shares session volume/mute across this process's players.
     # DirectSound controls each player's own buffer instead.
+    # stop()/set_media() recreates the output. Early audio_set_volume calls can
+    # fail before it exists, so every newly opened output must start silent.
     return vlc.Instance('--quiet', '--no-video-title-show', '--avcodec-hw=any',
-                        '--aout=directsound', '--no-volume-save', *extra_options)
+                        '--aout=directsound', '--directx-volume=0',
+                        '--no-volume-save', *extra_options)
