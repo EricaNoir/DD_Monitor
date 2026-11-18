@@ -288,19 +288,19 @@ class StudioWindow(QMainWindow):
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list, 1)
-        self.refresh_live_button = decorate(button('', self.refresh_favorite_status), 'reload', '刷新开播状态')
-        self.refresh_live_button.setFixedSize(SIZES['rail'], 36)
-        self.refresh_live_button.setObjectName('SidebarRefresh')
-        self.refresh_live_button.setAccessibleName('刷新开播状态')
-        box.addWidget(self.refresh_live_button)
+        self.refresh_live_button = button('', self.refresh_favorite_status)
         self.library_add = button('', lambda: self.open_search(self.active))
-        self.library_add.setIcon(icon('add'))
-        self.library_add.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
-        self.library_add.setObjectName('SidebarAdd')
-        self.library_add.setMinimumHeight(36)
-        self.library_add.setToolTip('添加直播间  Ctrl+K')
-        self.library_add.setAccessibleName('添加直播间')
-        box.addWidget(self.library_add)
+        for widget, glyph, description in (
+                (self.refresh_live_button, 'reload', '刷新开播状态'),
+                (self.library_add, 'add', '添加直播间  Ctrl+K')):
+            # Rail actions fill the rail, unlike compact toolbar icon buttons.
+            widget.setProperty('railAction', True)
+            widget.setFixedSize(SIZES['rail'], SIZES['rail_action'])
+            widget.setIcon(icon(glyph))
+            widget.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
+            widget.setToolTip(description)
+            widget.setAccessibleName(description)
+            box.addWidget(widget)
         return frame
 
     def build_chat_settings(self):

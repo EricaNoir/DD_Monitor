@@ -108,6 +108,11 @@ class UITests(unittest.TestCase):
         self.assertEqual(w.layout_choice.height(), 32)
         self.assertEqual(w.controls_toggle.height(), 32)
         self.assertEqual(w.library.mapTo(w.centralWidget(), QPoint()).x(), 0)
+        for action in (w.refresh_live_button, w.library_add):
+            self.assertEqual(action.width(), w.library.width())
+            self.assertEqual(action.height(), 36)
+            self.assertEqual(action.geometry().center().x(), w.library.rect().center().x())
+        self.assertEqual(w.refresh_live_button.geometry().bottom() + 1, w.library_add.y())
         tile = w.tiles[0]
         self.assertEqual(tile.quality.height(), 28)
         self.assertEqual(tile.play_button.height(), 28)

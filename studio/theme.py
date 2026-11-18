@@ -24,7 +24,7 @@ FONTS = {
 SIZES = {
     'control': 32, 'compact': 28, 'icon': 18, 'inline_icon': 16,
     'stepper_icon': 12, 'radius': 6, 'bubble_radius': 8, 'gap': 8,
-    'rail': 42, 'tile_toolbar': 36, 'control_gap': 3,
+    'rail': 42, 'rail_action': 36, 'tile_toolbar': 36, 'control_gap': 3,
     'bubble_padding': 8, 'message_gap': 8,
     'sc_overlay_width': 130, 'sc_overlay_height': 40, 'sc_overlay_gap': 4,
     'sc_overlay_inset': 8,
