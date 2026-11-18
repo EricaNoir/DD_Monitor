@@ -81,6 +81,20 @@ class ChatSendTests(unittest.TestCase):
         self.assertEqual(display_interval(message, 90), (100, 130))
         self.assertIsNone(display_interval(message, 400))
 
+    def test_chat_worker_retries_fatal_exit_and_stops_without_waiting(self):
+        worker = ChatWorker(123, {})
+        calls = []
+        async def listen():
+            calls.append(True)
+            if len(calls) == 1:
+                raise OSError('network')
+            worker.stop()
+        worker.listen = listen
+        with patch.object(worker.stop_requested, 'wait', return_value=False) as wait:
+            worker.run()
+            wait.assert_called_once_with(3)
+        self.assertEqual(len(calls), 2)
+
 
 class ComposerTests(unittest.TestCase):
     @classmethod

@@ -80,6 +80,12 @@ class PlayerTile(QFrame):
         self._audio_muted = None
         self._audio_pending = False
         self.request_pending = False
+        self.request_started = 0.0
+        self.retry_at = None
+        self.retry_attempts = 0
+        self.progress_at = time.monotonic()
+        self.media_time = None
+        self.healthy_since = None
         self.chat_width = 195
         self.setObjectName('VideoTile')
         self.setMinimumSize(290, 205)
@@ -284,7 +290,8 @@ class PlayerTile(QFrame):
         details = (self.room.get('name', '') + ' · ' + self.room.get('title', '') + '\n' if self.room else '') + text
         self.name.setToolTip(details)
         self.status_light.setToolTip(details)
-        color = COLORS['live'] if text.startswith('直播中') else (COLORS['warning'] if '失败' in text or '超时' in text else COLORS['text_muted'])
+        warning = any(word in text for word in ('失败', '超时', '中断', '停滞'))
+        color = COLORS['live'] if text.startswith('直播中') else (COLORS['warning'] if warning else COLORS['offline'])
         self.status_light.set_color(color)
 
     def remember_chat_width(self, *_):
@@ -387,21 +394,34 @@ class PlayerTile(QFrame):
             self.name.setText(f'{self.index + 1:02d}   选择一个直播间')
             self.empty_title.setText(f'画面 {self.index + 1:02d}')
 
-    def reload(self, reconnect_chat=False):
+    def reload(self, reconnect_chat=False, automatic=False):
         if not self.room:
             return
+        self.retry_at = None
+        if not automatic:
+            self.retry_attempts = 0
+        self.request_started = time.monotonic()
+        self.progress_at = self.request_started
+        self.media_time = None
+        self.healthy_since = None
         if reconnect_chat:
             self.start_chat()
         self.generation += 1
         ticket = self.generation
         self.request_pending = True
         self.set_status('正在获取直播画面…')
+        self.empty_title.setText(self.room['name'])
         self.empty_hint.setText('正在连接直播间…')
         api = BiliAPI(self.cookies)
         rid, quality = self.room['id'], self.quality.currentData()
         task = Job(lambda: api.stream(rid, quality))
+        # Keep the signal object alive until its queued GUI callbacks finish,
+        # even after QThreadPool auto-deletes the short-lived runnable.
+        task.signals.setParent(self)
         task.signals.done.connect(lambda result: self.got_stream(ticket, result))
         task.signals.error.connect(lambda error: self.failed(ticket, error))
+        task.signals.done.connect(task.signals.deleteLater)
+        task.signals.error.connect(task.signals.deleteLater)
         QThreadPool.globalInstance().start(task)
 
     def got_stream(self, ticket, result):
@@ -416,8 +436,9 @@ class PlayerTile(QFrame):
                 self.player.stop()
             self.stack.setCurrentIndex(0)
             self.empty_title.setText(self.room['name'])
-            self.empty_hint.setText('主播暂未开播，可以查看聊天或切换其他房间')
-            self.set_status('未开播 · 点击 ↻ 重新检查')
+            self.empty_hint.setText('主播暂未开播，自动检查开播状态')
+            self.set_status('未开播，自动检查开播状态')
+            self.schedule_reconnect('主播暂未开播', delay=30)
             return
         if not self.player:
             self.failed(ticket, 'VLC 未加载，无法播放')
@@ -430,6 +451,7 @@ class PlayerTile(QFrame):
         self._audio_volume = self._audio_muted = None
         self.apply_audio(force=True)
         self.player.play()
+        self.progress_at = time.monotonic()
         self._audio_pending = True
         self.audio_startup.start()
         media.release()
@@ -441,23 +463,67 @@ class PlayerTile(QFrame):
             return
         self.request_pending = False
         self.set_status(error)
-        self.empty_hint.setText(error + '\n点击下方 ↻ 重试')
+        self.empty_hint.setText(error)
+        self.schedule_reconnect(error)
+
+    def schedule_reconnect(self, reason, delay=None):
+        if not self.player or not self.room or self.retry_at is not None:
+            return
+        if delay is None:
+            delay = min(30, 3 * 2 ** min(self.retry_attempts, 4))
+            self.retry_attempts += 1
+        self.retry_at = time.monotonic() + delay
+        self.healthy_since = None
+        text = f'{reason}，{delay} 秒后自动重连'
+        self.set_status(text)
+        self.empty_hint.setText(text)
 
     def monitor_playback(self):
-        if not self.player or not self.room or self.request_pending:
+        if not self.player or not self.room:
+            return
+        now = time.monotonic()
+        if self.paused or self.suspended:
+            self.progress_at = now
+            self.healthy_since = None
+            if str(self.player.get_state()).split('.')[-1] == 'Playing':
+                self.player.set_pause(True)
+            return
+        if self.request_pending:
+            if now - self.request_started >= 45:
+                self.generation += 1  # Ignore any late result from this request.
+                self.request_pending = False
+                self.schedule_reconnect('获取直播画面超时')
+            return
+        if self.retry_at is not None:
+            if now >= self.retry_at:
+                self.reload(automatic=True)
             return
         state = str(self.player.get_state()).split('.')[-1]
+        if state != 'Playing':
+            self.healthy_since = None
         if state == 'Playing':
             if self.apply_audio(force=self._audio_pending):
                 self._audio_pending = False
                 self.audio_startup.stop()
-            if self.paused or self.suspended:
-                self.player.set_pause(True)
+            position = self.player.get_time()
+            if isinstance(position, (int, float)) and position >= 0:
+                if position != self.media_time:
+                    self.media_time = position
+                    self.progress_at = now
+                    if self.healthy_since is None:
+                        self.healthy_since = now
+                    elif now - self.healthy_since >= 15:
+                        self.retry_attempts = 0
+                elif now - self.progress_at >= 20:
+                    self.schedule_reconnect('播放进度停滞')
+                    return
             self.set_status('直播中  ·  ' + self.room.get('title', ''))
-        elif state == 'Error':
-            self.set_status('播放连接失败 · 点击 ↻ 重试或降低清晰度')
+        elif state in ('Error', 'Ended', 'Stopped'):
+            self.schedule_reconnect('直播连接中断')
         elif state == 'Paused':
             self.set_status('已暂停')
+        elif now - self.progress_at >= 25:
+            self.schedule_reconnect('直播缓冲超时')
 
     def start_chat(self):
         self.retire_chat()
@@ -543,6 +609,11 @@ class PlayerTile(QFrame):
         self.audio_startup.stop()
         self.generation += 1
         self.request_pending = False
+        self.retry_at = None
+        self.retry_attempts = 0
+        self.media_time = None
+        self.progress_at = time.monotonic()
+        self.healthy_since = None
         if self.player:
             self.player.stop()
         self._audio_volume = None

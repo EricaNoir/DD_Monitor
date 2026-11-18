@@ -10,7 +10,7 @@ COLORS = {
     'text': '#e6e6e6', 'text_secondary': '#aaaaaa', 'text_muted': '#929292',
     'text_disabled': '#666666', 'icon': '#dcdcdc', 'inverse': '#202020',
     'primary': '#e7e7e7', 'primary_hover': '#ffffff', 'avatar': '#454545',
-    'live': '#70bd91', 'offline': '#777777', 'warning': '#d8a074',
+    'live': '#55dc91', 'offline': '#777777', 'warning': '#d8a074',
     'danger_hover': '#653333', 'video': '#0d0d0d',
     'gift': '#cbbd98', 'favorite': '#d9c794', 'medal': '#bba5d2',
     'sc_surface': '#34312b', 'sc_border': '#484238',
@@ -28,6 +28,7 @@ SIZES = {
     'bubble_padding': 8, 'message_gap': 8,
     'sc_overlay_width': 130, 'sc_overlay_height': 40, 'sc_overlay_gap': 4,
     'sc_overlay_inset': 8,
+    'status_dot': 7, 'avatar_status_dot': 10,
 }
 ICON_STROKE = 1.75
 

@@ -157,9 +157,16 @@ class UITests(unittest.TestCase):
         self.assertEqual(w.favorite_timer.interval(), 30000)
         w.demo = False
         with patch('studio.app.QThreadPool') as pool:
-            w.refresh_favorite_status()
+            w.refresh_live_button.click()
+            self.assertFalse(w.refresh_live_button.isEnabled())
             w.refresh_favorite_status()
             pool.globalInstance.return_value.start.assert_called_once()
+            w.favorite_status_failed('network')
+            self.assertTrue(w.refresh_live_button.isEnabled())
+            w.refresh_live_button.click()
+            self.assertEqual(pool.globalInstance.return_value.start.call_count, 2)
+            w.favorite_status_ready([])
+            self.assertTrue(w.refresh_live_button.isEnabled())
         w.demo = True
         dialog.close()
 
@@ -871,6 +878,85 @@ class UITests(unittest.TestCase):
             event = SimpleNamespace(mimeData=lambda: mime, source=lambda: source, acceptProposedAction=Mock())
             tile.dropEvent(event)
             event.acceptProposedAction.assert_not_called()
+
+    def test_auto_reconnect_backs_off_without_duplicate_stream_requests(self):
+        tile = self.window.tiles[0]
+        tile.room = {'id': '1', 'name': '测试', 'live': True}
+        tile.player = Mock()
+        tile.player.get_state.return_value = 'State.Error'
+        with patch('studio.player.time.monotonic', return_value=100) as clock, patch('studio.player.QThreadPool') as pool:
+            tile.monitor_playback()
+            self.assertEqual(tile.retry_at, 103)
+            clock.return_value = 102
+            tile.monitor_playback()
+            pool.globalInstance.return_value.start.assert_not_called()
+            clock.return_value = 103
+            tile.monitor_playback()
+            self.assertTrue(tile.request_pending)
+            self.assertIsNone(tile.retry_at)
+            pool.globalInstance.return_value.start.assert_called_once()
+            clock.return_value = 104
+            tile.monitor_playback()
+            pool.globalInstance.return_value.start.assert_called_once()
+            tile.failed(tile.generation, '连接失败')
+            self.assertEqual(tile.retry_at, 110)
+            tile.monitor_playback()
+            self.assertEqual(tile.retry_at, 110)
+            tile.clear()
+            clock.return_value = 200
+            tile.monitor_playback()
+            pool.globalInstance.return_value.start.assert_called_once()
+
+    def test_request_timeout_ignores_late_result_and_pause_suppresses_retry(self):
+        tile = self.window.tiles[0]
+        room = {'id': '1', 'name': '测试', 'live': True}
+        tile.room = room
+        tile.player = Mock()
+        tile.player.get_state.return_value = 'State.Opening'
+        with patch('studio.player.time.monotonic', return_value=100) as clock, patch('studio.player.QThreadPool') as pool:
+            tile.reload()
+            ticket = tile.generation
+            clock.return_value = 145
+            tile.monitor_playback()
+            self.assertFalse(tile.request_pending)
+            self.assertEqual(tile.retry_at, 148)
+            tile.got_stream(ticket, {'room': dict(room, name='过期结果'), 'url': None})
+            self.assertEqual(tile.room['name'], '测试')
+            tile.paused = True
+            clock.return_value = 200
+            tile.monitor_playback()
+            pool.globalInstance.return_value.start.assert_called_once()
+            tile.paused = False
+            tile.suspended = True
+            tile.monitor_playback()
+            pool.globalInstance.return_value.start.assert_called_once()
+            tile.suspended = False
+            tile.monitor_playback()
+            self.assertEqual(pool.globalInstance.return_value.start.call_count, 2)
+
+    def test_stalled_playback_and_buffer_timeout_reconnect_without_touching_audio(self):
+        tile = self.window.tiles[0]
+        tile.room = {'id': '1', 'name': '测试', 'live': True}
+        tile.player = Mock()
+        tile.player.audio_set_volume.return_value = 0
+        tile.player.get_state.return_value = 'State.Playing'
+        tile.player.get_time.return_value = 1000
+        tile.apply_audio()
+        tile.player.reset_mock()
+        with patch('studio.player.time.monotonic', return_value=100) as clock:
+            tile.monitor_playback()
+            clock.return_value = 121
+            tile.monitor_playback()
+            self.assertEqual(tile.retry_at, 124)
+            tile.player.audio_set_volume.assert_not_called()
+            tile.player.audio_set_mute.assert_not_called()
+            tile.retry_at = None
+            tile.retry_attempts = 0
+            tile.progress_at = 125
+            tile.player.get_state.return_value = 'State.Buffering'
+            clock.return_value = 150
+            tile.monitor_playback()
+            self.assertEqual(tile.retry_at, 153)
 
     def test_favorite_star_and_quick_selection_persist(self):
         w = self.window

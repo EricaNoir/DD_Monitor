@@ -288,6 +288,11 @@ class StudioWindow(QMainWindow):
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list, 1)
+        self.refresh_live_button = decorate(button('', self.refresh_favorite_status), 'reload', '刷新开播状态')
+        self.refresh_live_button.setFixedSize(SIZES['rail'], 36)
+        self.refresh_live_button.setObjectName('SidebarRefresh')
+        self.refresh_live_button.setAccessibleName('刷新开播状态')
+        box.addWidget(self.refresh_live_button)
         self.library_add = button('', lambda: self.open_search(self.active))
         self.library_add.setIcon(icon('add'))
         self.library_add.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
@@ -355,6 +360,7 @@ class StudioWindow(QMainWindow):
             if room['id'] == selected_id:
                 self.room_list.setCurrentItem(item)
         self.sync_sidebar_visible()
+        self.refresh_live_button.setEnabled(bool(self.favorites) and not getattr(self, 'favorite_poll_pending', False))
 
     def reorder_favorites(self, room_ids):
         self.favorite_order = list(dict.fromkeys(rid for rid in room_ids if rid in self.favorites))
@@ -647,6 +653,8 @@ class StudioWindow(QMainWindow):
         monitored.update(tile.room['id'] for tile in self.tiles[:self.count] if tile.room)
         rooms = [dict(room) for rid, room in self.rooms.items() if rid in monitored]
         self.favorite_poll_pending = True
+        self.refresh_live_button.setEnabled(False)
+        self.refresh_live_button.setToolTip('正在刷新开播状态…')
         api = BiliAPI(self.cookies)
         job = Job(lambda: api.room_statuses(rooms))
         job.signals.done.connect(self.favorite_status_ready)
@@ -655,12 +663,15 @@ class StudioWindow(QMainWindow):
 
     def favorite_status_failed(self, error):
         self.favorite_poll_pending = False
+        self.refresh_live_button.setEnabled(bool(self.favorites))
+        self.refresh_live_button.setToolTip('刷新失败，点击重试\n' + error)
         # Keep last known states; a failed request does not mean offline.
 
     def favorite_status_ready(self, rooms):
         self.favorite_poll_pending = False
         if self.closing:
             return
+        self.refresh_live_button.setToolTip('刷新开播状态（上次刷新成功）')
         visible_ids = {tile.room['id'] for tile in self.tiles[:self.count] if tile.room}
         for room in rooms:
             if room['id'] in self.rooms and (room['id'] in self.favorites or room['id'] in visible_ids):

@@ -20,7 +20,8 @@ class StatusDot(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(self.color))
-        painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), 1.5, 1.5)
+        radius = SIZES['status_dot'] / 2
+        painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), radius, radius)
 
 
 class BelowComboBox(QComboBox):

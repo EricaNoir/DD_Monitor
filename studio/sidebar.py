@@ -106,7 +106,8 @@ class RoomDelegate(QStyledItemDelegate):
         painter.restore()
         painter.setPen(QPen(QColor(COLORS['surface']), 2))
         painter.setBrush(QColor(COLORS['live'] if room.get('live') else COLORS['offline']))
-        painter.drawEllipse(QRectF(avatar.right() - 6, avatar.bottom() - 6, 8, 8))
+        size = SIZES['avatar_status_dot']
+        painter.drawEllipse(QRectF(avatar.right() - size + 2, avatar.bottom() - size + 2, size, size))
         painter.restore()
 
     def sizeHint(self, option, index):

@@ -381,11 +381,19 @@ class ChatWorker(QThread):
         self.stop_requested.set()
 
     def run(self):
-        try:
-            asyncio.run(self.listen())
-        except Exception:
-            if not self.stop_requested.is_set():
-                self.status.emit('聊天连接中断，可点击重连')
+        attempts = 0
+        while not self.stop_requested.is_set():
+            try:
+                asyncio.run(self.listen())
+            except Exception:
+                pass
+            if self.stop_requested.is_set():
+                return
+            delay = min(30, 3 * 2 ** min(attempts, 4))
+            attempts += 1
+            self.status.emit(f'聊天连接中断，{delay} 秒后自动重连')
+            if self.stop_requested.wait(delay):
+                return
 
     async def load_active_sc(self, session):
         try:
