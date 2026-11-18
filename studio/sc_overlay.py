@@ -1,6 +1,7 @@
 """Owned, input-transparent window: stays above VLC's native video surface."""
 import math
 import time
+from .theme import SIZES
 from PySide6.QtCore import Qt, QTimer, QEvent, QPoint
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel, QProgressBar, QApplication
 
@@ -36,7 +37,7 @@ class SCOverlay(QFrame):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.box = QVBoxLayout(self)
         self.box.setContentsMargins(0, 0, 0, 0)
-        self.box.setSpacing(6)
+        self.box.setSpacing(SIZES['sc_overlay_gap'])
         self.timer = QTimer(self)
         self.timer.setInterval(250)
         self.timer.timeout.connect(self.sync)
@@ -97,8 +98,11 @@ class SCOverlay(QFrame):
         if not self.host.isVisible() or not window.isVisible() or window.isMinimized():
             self.hide()
             return
-        width = min(320, self.host.width() - 20)
-        capacity = min(3, max(0, (self.host.height() - 38) // 105))
+        inset = SIZES['sc_overlay_inset']
+        gap = SIZES['sc_overlay_gap']
+        card_height = SIZES['sc_overlay_height']
+        width = min(SIZES['sc_overlay_width'], self.host.width() - 2 * inset)
+        capacity = min(3, max(0, (self.host.height() - 2 * inset - 20) // (card_height + gap)))
         if width < 100 or not capacity:
             self.hide()
             return
@@ -121,10 +125,10 @@ class SCOverlay(QFrame):
             for sid, (message, interval) in visible:
                 card = QFrame()
                 card.setObjectName('SCCard')
-                card.setFixedHeight(99)
+                card.setFixedHeight(card_height)
                 layout = QVBoxLayout(card)
-                layout.setContentsMargins(10, 7, 10, 7)
-                layout.setSpacing(4)
+                layout.setContentsMargins(8, 6, 8, 6)
+                layout.setSpacing(3)
                 heading = QLabel()
                 heading.setTextFormat(Qt.PlainText)
                 layout.addWidget(heading)
@@ -135,7 +139,7 @@ class SCOverlay(QFrame):
                 progress = QProgressBar()
                 progress.setRange(0, 1000)
                 progress.setTextVisible(False)
-                progress.setFixedHeight(3)
+                progress.setFixedHeight(2)
                 layout.addWidget(progress)
                 self.box.addWidget(card)
                 self.cards.append((sid, heading, progress))
@@ -143,7 +147,7 @@ class SCOverlay(QFrame):
                 extra = QLabel(f'另有 {more} 条 SC · 在 SC 标签查看')
                 extra.setFixedHeight(16)
                 self.box.addWidget(extra)
-            self.setFixedHeight(len(visible) * 105 - 6 + (22 if more else 0))
+            self.setFixedHeight(len(visible) * (card_height + gap) - gap + (16 + gap if more else 0))
         for sid, heading, progress in self.cards:
             message, (start, end) = self.active[sid]
             seconds = max(0, math.ceil(end - now))
@@ -151,7 +155,7 @@ class SCOverlay(QFrame):
             title = f'SC ¥{message.get("price", "")} · {message.get("name", "观众")} · {remaining}'
             heading.setText(heading.fontMetrics().elidedText(title, Qt.ElideMiddle, width - 22))
             progress.setValue(max(0, min(1000, int(1000 * (end - now) / (end - start)))))
-        self.move(self.host.mapToGlobal(QPoint(10, 10)))
+        self.move(self.host.mapToGlobal(QPoint(inset, inset)))
         if not self.isVisible():
             self.show()
 

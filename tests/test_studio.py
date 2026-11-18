@@ -137,6 +137,8 @@ class UITests(unittest.TestCase):
         w = self.window
         w.rooms = {str(i): {'id': str(i), 'uid': i, 'name': str(i), 'live': False} for i in range(1, 4)}
         w.favorites = {'1', '2'}
+        for tile, rid in zip(w.tiles, ('1', '2', '90', '91')):
+            tile.room = {'id': rid, 'name': rid, 'live': True}
         dialog = SearchDialog({}, 0, 4, w)
         w.dialogs.append(dialog)
         dialog.show()
@@ -160,6 +162,79 @@ class UITests(unittest.TestCase):
             pool.globalInstance.return_value.start.assert_called_once()
         w.demo = True
         dialog.close()
+
+    def test_live_favorites_fill_offline_slots_and_leave_full_live_grid(self):
+        w = self.window
+        w.rooms = {str(i): {'id': str(i), 'uid': i, 'name': str(i), 'live': True} for i in range(1, 8)}
+        w.favorites = set(w.rooms)
+        for tile, rid in zip(w.tiles[:4], ('1', '2', '3', '4')):
+            tile.room = dict(w.rooms[rid])
+            tile.reload = Mock()
+            tile.set_room = Mock(side_effect=lambda room, t=tile: setattr(t, 'room', dict(room)))
+        w.select_tile(2)
+        statuses = {rid: dict(room) for rid, room in w.rooms.items()}
+        w.fill_live_favorites(statuses)
+        self.assertTrue(all(not t.set_room.called and not t.reload.called for t in w.tiles[:4]))
+        statuses['2']['live'] = False
+        w.tiles[3].room = None
+        w.fill_live_favorites(statuses)
+        self.assertEqual([t.room['id'] for t in w.tiles[:4]], ['1', '4', '3', '5'])
+        self.assertEqual(w.active, 2)
+        self.assertFalse(w.tiles[0].set_room.called)
+        self.assertFalse(w.tiles[2].set_room.called)
+        for t in w.tiles[:4]:
+            t.set_room.reset_mock()
+        w.fill_live_favorites(statuses)
+        self.assertTrue(all(not t.set_room.called for t in w.tiles[:4]))
+
+    def test_sidebar_internal_reorder_persists_and_keeps_live_first(self):
+        w = self.window
+        w.rooms = {str(i): {'id': str(i), 'name': str(i), 'live': i != 4} for i in range(1, 5)}
+        w.favorites = set(w.rooms)
+        w.refresh_library()
+        rail = w.room_list
+        mime = QMimeData()
+        mime.setData('application/x-dd-room', json.dumps(w.rooms['3']).encode())
+        point = rail.visualItemRect(rail.item(0)).topLeft()
+        event = SimpleNamespace(source=lambda: rail, mimeData=lambda: mime,
+                                position=lambda: point, acceptProposedAction=Mock(), ignore=Mock())
+        # Real drop positions use QPointF.
+        from PySide6.QtCore import QPointF
+        event.position = lambda: QPointF(point)
+        rail.dropEvent(event)
+        self.assertEqual([rail.item(i).data(Qt.UserRole)['id'] for i in range(4)], ['3', '1', '2', '4'])
+        event.acceptProposedAction.assert_called_once()
+        w.demo = False
+        w.save()
+        w.demo = True
+        self.assertEqual(load_state(self.path)['favorite_order'], ['3', '1', '2', '4'])
+        w.reorder_favorites(['4', '3', '1', '2'])
+        self.assertEqual(rail.item(0).data(Qt.UserRole)['id'], '3')
+        self.assertEqual(rail.item(3).data(Qt.UserRole)['id'], '4')
+        before = list(w.favorite_order)
+        event.source = lambda: w.tiles[0]
+        rail.dropEvent(event)
+        self.assertEqual(w.favorite_order, before)
+        event.ignore.assert_called_once()
+
+    def test_existing_offline_room_starts_and_unknown_state_is_preserved(self):
+        w = self.window
+        w.rooms = {'1': {'id': '1', 'name': '1', 'live': False},
+                   '2': {'id': '2', 'name': '2', 'live': True}}
+        w.favorites = {'1', '2'}
+        # Resolved rooms may share the same dict with the metadata cache.
+        w.tiles[0].room = w.rooms['1']
+        w.tiles[0].reload = Mock()
+        for i, tile in enumerate(w.tiles[1:4], 10):
+            tile.room = {'id': str(i), 'name': str(i), 'live': False}
+            tile.set_room = Mock()
+        w.favorite_status_ready([dict(w.rooms['1'], live=True), dict(w.rooms['2'])])
+        w.tiles[0].reload.assert_called_once_with()
+        self.assertTrue(all(not t.set_room.called for t in w.tiles[1:4]))
+        w.tiles[0].reload.reset_mock()
+        w.tiles[0].request_pending = True
+        w.favorite_status_ready([dict(w.rooms['1'], live=True)])
+        w.tiles[0].reload.assert_not_called()
 
     def test_avatar_drag_works_without_selection_and_does_not_click(self):
         from PySide6.QtCore import QEvent, QPointF
@@ -336,6 +411,8 @@ class UITests(unittest.TestCase):
         overlay = tile.sc_overlay
         self.assertTrue(overlay.isVisible())
         self.assertNotIn('SC 浮层', tile.chat_view.toPlainText())
+        self.assertLessEqual(overlay.width(), 260)
+        self.assertEqual(overlay.height(), 80)
         self.assertLessEqual(overlay.cards[0][2].value(), 167)
         self.assertTrue(overlay.windowFlags() & Qt.WindowTransparentForInput)
         tile.chat_toggle.setChecked(False)

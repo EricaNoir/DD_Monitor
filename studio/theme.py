@@ -15,7 +15,7 @@ COLORS = {
     'gift': '#cbbd98', 'favorite': '#d9c794', 'medal': '#bba5d2',
     'sc_surface': '#34312b', 'sc_border': '#484238',
     'sc_heading': '#e8cd91', 'sc_text': '#f0e9db', 'sc_progress': '#c5a669',
-    'sc_overlay': 'rgba(38,35,29,235)',
+    'sc_overlay': 'rgba(38,35,29,160)',
 }
 FONTS = {
     'family': '"Microsoft YaHei UI", "Segoe UI"',
@@ -26,6 +26,8 @@ SIZES = {
     'stepper_icon': 12, 'radius': 6, 'bubble_radius': 8, 'gap': 8,
     'rail': 42, 'tile_toolbar': 36, 'control_gap': 3,
     'bubble_padding': 8, 'message_gap': 8,
+    'sc_overlay_width': 260, 'sc_overlay_height': 80, 'sc_overlay_gap': 4,
+    'sc_overlay_inset': 8,
 }
 ICON_STROKE = 1.75
 

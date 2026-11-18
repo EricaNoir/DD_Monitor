@@ -74,7 +74,7 @@ QLabel#Amount { font-size: ${font_amount}px; font-weight: 600; }
 QPlainTextEdit { background: $panel; border: 1px solid $border; border-radius: ${size_radius}px; padding: 8px; }
 QFrame#SCOverlay { background: transparent; }
 QFrame#SCCard { background: $sc_overlay; border: 1px solid $sc_border; border-radius: ${size_bubble_radius}px; }
-QFrame#SCOverlay QLabel { background: transparent; color: $sc_text; border: 0; font-size: ${font_small}px; }
+QFrame#SCOverlay QLabel { background: transparent; color: $sc_text; border: 0; font-size: ${font_caption}px; }
 QFrame#SCOverlay QProgressBar { background: $sc_border; border: 0; border-radius: 1px; }
 QFrame#SCOverlay QProgressBar::chunk { background: $sc_progress; border-radius: 1px; }
 QScrollBar#FavoriteScroll:horizontal { background: transparent; border: 0; height: 4px; margin: 0; }

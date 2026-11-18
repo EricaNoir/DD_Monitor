@@ -19,6 +19,8 @@ through `studio.theme.stylesheet()`, including in preview and test scripts.
 - SC bubbles have 8 px padding, 8 px corner radius and a shared message gap.
   Cards fill the available chat width. Restore document padding after clearing
   a room so the first card is not clipped; the SC heading uses spaces, not dots.
+  Video overlays use separate 260 × 80 px cards, 11 px text and a translucent
+  background (alpha 160/255); chat bubbles retain their own size and palette.
   Explicit document block formats keep incoming messages and rebuilt history
   identical. Draw the rounded background behind selectable text; Qt rich text
   does not implement CSS `border-radius`.

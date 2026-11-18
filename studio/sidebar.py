@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import deque
 from pathlib import Path
-from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData, QEvent
+from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData, QEvent, QTimer
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPixmap, QDrag, QPen
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import QApplication, QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip, QMenu
@@ -115,6 +115,7 @@ class RoomDelegate(QStyledItemDelegate):
 
 class RoomList(QListWidget):
     remove_requested = Signal(dict)
+    reordered = Signal(list)
 
     def __init__(self, avatars):
         super().__init__()
@@ -123,12 +124,19 @@ class RoomList(QListWidget):
         self.drag_start = None
         self.drag_room = None
         self.dragged = False
+        self.drop_y = None
+        self.drop_point = None
+        self.drag_scroll = QTimer(self)
+        self.drag_scroll.setInterval(70)
+        self.drag_scroll.timeout.connect(self.scroll_drag)
         self.setObjectName('AvatarRail')
         self.active_room = None
         self.visible_rooms = set()
         self.setSelectionMode(QAbstractItemView.NoSelection)
         self.setItemDelegate(RoomDelegate(self))
         self.setDragEnabled(False)  # Explicit dragging works with NoSelection.
+        self.setAcceptDrops(True)
+        self.setAutoScroll(True)
         self.setMouseTracking(True)
         self.setSpacing(0)
         self.setMinimumWidth(38)
@@ -201,6 +209,87 @@ class RoomList(QListWidget):
             drag = QDrag(self)
             drag.setMimeData(mime)
             drag.exec(Qt.CopyAction)
+            self.drop_y = None
+            self.drag_scroll.stop()
+            self.viewport().update()
+
+    def internal_drop(self, event):
+        return event.source() is self and event.mimeData().hasFormat('application/x-dd-room')
+
+    def dragEnterEvent(self, event):
+        if self.internal_drop(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def insertion_index(self, point):
+        item = self.itemAt(point)
+        if item is None:
+            return self.count()
+        rect = self.visualItemRect(item)
+        return self.row(item) + int(point.y() > rect.center().y())
+
+    def dragMoveEvent(self, event):
+        if not self.internal_drop(event):
+            event.ignore()
+            return
+        self.drop_point = event.position().toPoint()
+        self.update_drop_indicator()
+        self.drag_scroll.start()
+        event.acceptProposedAction()
+
+    def update_drop_indicator(self):
+        index = self.insertion_index(self.drop_point)
+        self.drop_y = (self.visualItemRect(self.item(index)).top() if index < self.count()
+                       else self.visualItemRect(self.item(self.count() - 1)).bottom()) if self.count() else 0
+        self.viewport().update()
+
+    def scroll_drag(self):
+        if self.drop_point is None:
+            return
+        y = self.drop_point.y()
+        delta = -12 if y < 20 else (12 if y > self.viewport().height() - 20 else 0)
+        if delta:
+            bar = self.verticalScrollBar()
+            bar.setValue(bar.value() + delta)
+            self.update_drop_indicator()
+
+    def dragLeaveEvent(self, event):
+        self.drop_y = None
+        self.drag_scroll.stop()
+        self.viewport().update()
+        event.accept()
+
+    def dropEvent(self, event):
+        self.drop_y = None
+        self.drag_scroll.stop()
+        self.viewport().update()
+        if not self.internal_drop(event):
+            event.ignore()
+            return
+        try:
+            rid = json.loads(bytes(event.mimeData().data('application/x-dd-room')))['id']
+        except (ValueError, KeyError, TypeError):
+            event.ignore()
+            return
+        ids = [self.item(i).data(Qt.UserRole)['id'] for i in range(self.count())]
+        if rid not in ids:
+            event.ignore()
+            return
+        index = self.insertion_index(event.position().toPoint())
+        previous = ids.index(rid)
+        ids.pop(previous)
+        ids.insert(index - int(previous < index), rid)
+        self.reordered.emit(ids)
+        event.acceptProposedAction()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.drop_y is not None:
+            painter = QPainter(self.viewport())
+            painter.setPen(QPen(QColor(COLORS['icon']), 2))
+            painter.drawLine(6, self.drop_y, self.viewport().width() - 6, self.drop_y)
+            painter.end()
 
 
 class SearchResultDelegate(QStyledItemDelegate):

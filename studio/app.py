@@ -121,6 +121,7 @@ class StudioWindow(QMainWindow):
         self.rooms = {room['id']: room for room in self.state['rooms']}
         saved_favorites = self.state.get('favorites')
         self.favorites = set(self.rooms if saved_favorites is None else saved_favorites)
+        self.favorite_order = list(dict.fromkeys(self.state.get('favorite_order', [])))
         self.avatars = AvatarStore(self.root / 'user-data/avatars', self, enabled=not demo)
         self.avatar_metadata_pending = set()
         self.avatar_pool = QThreadPool(self)
@@ -283,6 +284,7 @@ class StudioWindow(QMainWindow):
         box.setSpacing(0)
         self.room_list = RoomList(self.avatars)
         self.room_list.remove_requested.connect(lambda room: self.set_favorite(room, False))
+        self.room_list.reordered.connect(self.reorder_favorites)
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list, 1)
@@ -338,7 +340,10 @@ class StudioWindow(QMainWindow):
         current = self.room_list.currentItem()
         selected_id = current.data(Qt.UserRole)['id'] if current else None
         self.room_list.clear()
-        for room in sorted(self.rooms.values(), key=lambda room: not room.get('live', False)):
+        self.favorite_order = [rid for rid in self.favorite_order if rid in self.favorites]
+        self.favorite_order.extend(rid for rid in self.rooms if rid in self.favorites and rid not in self.favorite_order)
+        order = {rid: i for i, rid in enumerate(self.favorite_order)}
+        for room in sorted(self.rooms.values(), key=lambda room: (not room.get('live', False), order.get(room['id'], len(order)))):
             if room['id'] not in self.favorites:
                 continue
             state = '● 直播中' if room.get('live') else '○ 未开播'
@@ -350,6 +355,11 @@ class StudioWindow(QMainWindow):
             if room['id'] == selected_id:
                 self.room_list.setCurrentItem(item)
         self.sync_sidebar_visible()
+
+    def reorder_favorites(self, room_ids):
+        self.favorite_order = list(dict.fromkeys(rid for rid in room_ids if rid in self.favorites))
+        self.refresh_library()
+        self.save()
 
     def hydrate_avatars(self):
         if self.demo or self.closing:
@@ -633,7 +643,9 @@ class StudioWindow(QMainWindow):
     def refresh_favorite_status(self):
         if self.demo or self.closing or self.favorite_poll_pending or not self.favorites:
             return
-        rooms = [dict(self.rooms[rid]) for rid in self.favorites if rid in self.rooms]
+        monitored = set(self.favorites)
+        monitored.update(tile.room['id'] for tile in self.tiles[:self.count] if tile.room)
+        rooms = [dict(room) for rid, room in self.rooms.items() if rid in monitored]
         self.favorite_poll_pending = True
         api = BiliAPI(self.cookies)
         job = Job(lambda: api.room_statuses(rooms))
@@ -649,14 +661,40 @@ class StudioWindow(QMainWindow):
         self.favorite_poll_pending = False
         if self.closing:
             return
+        visible_ids = {tile.room['id'] for tile in self.tiles[:self.count] if tile.room}
         for room in rooms:
-            if room['id'] in self.favorites and room['id'] in self.rooms:
-                self.rooms[room['id']].update(room)
+            if room['id'] in self.rooms and (room['id'] in self.favorites or room['id'] in visible_ids):
+                self.rooms[room['id']] = dict(self.rooms[room['id']], **room)
+        self.fill_live_favorites({room['id']: room for room in rooms})
         self.refresh_library()
         for dialog in self.dialogs:
             if isinstance(dialog, SearchDialog) and dialog.isVisible():
                 dialog.sync_favorites(self.rooms, self.favorites)
         self.save()
+
+    def fill_live_favorites(self, statuses):
+        """Use freshly verified states; never evict a live or unknown room."""
+        tiles = self.tiles[:self.count]
+        shown = {tile.room['id'] for tile in tiles if tile.room}
+        order = {rid: i for i, rid in enumerate(self.favorite_order)}
+        candidates = [room for rid, room in self.rooms.items()
+                      if rid in self.favorites and rid not in shown
+                      and statuses.get(rid, {}).get('live') is True]
+        candidates.sort(key=lambda room: order.get(room['id'], len(order)))
+        active = self.active
+        for tile in tiles:
+            if tile.room:
+                status = statuses.get(tile.room['id'], {})
+                if status.get('live') is True:
+                    # An offline room already occupying a slot has started.
+                    if tile.room.get('live') is False and not tile.request_pending:
+                        tile.reload()
+                    continue
+                if status.get('live') is not False:
+                    continue
+            if candidates and not tile.composer.sending:
+                tile.set_room(candidates.pop(0))
+        self.select_tile(active)
 
     def login(self):
         if any(isinstance(d, PaymentDialog) and d.busy for d in self.dialogs):
@@ -698,6 +736,7 @@ class StudioWindow(QMainWindow):
         self.state.pop('library_visible', None)
         self.state.update({'rooms': list(self.rooms.values()), 'slots': [tile.room['id'] if tile.room else None for tile in self.tiles],
                           'favorites': sorted(self.favorites),
+                            'favorite_order': self.favorite_order,
                           'layout': self.count, 'chat_visible': self.chat_toggle.isChecked(),
                           'controls_visible': self.controls_toggle.isChecked(),
                           'chat_font': self.chat_font.value(), 'chat_follow': self.follow.isChecked(),
