@@ -85,6 +85,13 @@ def main():
             '--disable-pip-version-check', '--only-binary=:all:', '--require-hashes', '--no-compile',
             '--platform', 'win_amd64', '--python-version', '3.13', '--implementation', 'cp', '--abi', 'cp313',
             '--target', python / 'Lib/site-packages', '-r', lock)
+        # Some official wheels contain bytecode built by their publisher for
+        # older Python versions. Keep their source, not those stale caches.
+        for path in python.rglob('*'):
+            if path.is_file() and path.suffix.lower() in ('.pyc', '.pyo'):
+                if not path.resolve().is_relative_to(package.resolve()):
+                    raise RuntimeError('Cache path escaped the build directory')
+                path.unlink()
         (package / 'portable-mode').write_text('Do not import accounts from neighboring installations.\n', encoding='utf-8')
         launcher = '@echo off\r\ncd /d "%~dp0"\r\nstart "DD Monitor Studio" "%~dp0python\\pythonw.exe" -I -B "%~dp0studio_main.py"\r\n'
         (package / '启动 DD Monitor.cmd').write_bytes(launcher.encode('ascii'))
