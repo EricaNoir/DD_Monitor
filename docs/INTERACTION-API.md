@@ -19,6 +19,8 @@
 | `/xlive/revenue/v1/wallet/getStatus` | `platform=pc` → `gold` 余额 |
 | `/av/v1/SuperChat/config` | `room_id, ruid, area_id, parent_area_id` → 可购买 SC 档位、字数和账号限制 |
 | `/av/v1/SuperChat/getMessage` | `order_id` → 留言及审核状态 |
+| `/av/v1/SuperChat/getMessageList` | `room_id` → 连接时补取仍有效的 SC |
+| `/xlive/web-room/v1/index/getInfoByUser` | `room_id` → `property.danmu.length` 为该账号房间的弹幕字数限制 |
 
 未注明域名的路径均在 `https://api.live.bilibili.com`。礼物列表取目录和房间上架列表的交集，仅支持 `coin_type=gold, gift_type=0, goods_id=15, pay_type=send_gift`。若有服务端折扣，展示与提交均使用折扣价。
 
@@ -32,6 +34,8 @@ SC：`POST /xlive/revenue/v1/order/createOrder`，字段为 `context_id=房号, 
 
 两者均使用当前用户扫码登录的 Cookie，并附带 `csrf` / `csrf_token=bili_jct`。Cookie 只保留于已忽略的本机用户数据，不上传给第三方服务，不写入日志或仓库。没有 B 币、现金或充值兜底。
 
+普通弹幕：`POST /msg/send`，form 字段 `msg, roomid, color=16777215, fontsize=25, mode=1, rnd, bubble=0, dm_type=0, csrf, csrf_token`。采用官方播放器脚本的 WBI URL 参数签名方式，对 `web_location=444.8` 与 `wts` 生成 `w_rid`，密钥从当前 nav 的 `wbi_img` 获取；消息正文不做签名字符过滤，原样保留标点。依据直播间官方播放器脚本中的 `userSendDanmaku` 与 `/msg/send` 调用。字数以 UTF-16 计，实际提交前重新校验。服务端 code=0 但 msg 含拒绝原因也不视为成功；不重试 POST、不做本地伪造回显，实际消息由 WebSocket 返回。
+
 发送确认固定房间、主播、付款 UID、数量和金额，提交前重新验证；变化即中止。每次提交仅发送一次 POST，禁止自动重试及重定向。超时等未知结果不能视为失败后重新扣费。SC 的订单状态 2/4 是待发放，5 是订单完成；留言仍有独立审核状态，不将订单提交冒充留言已展示。
 
 ## 接收
@@ -43,6 +47,8 @@ SC：`POST /xlive/revenue/v1/order/createOrder`，字段为 `context_id=房号, 
 - `SUPER_CHAT_MESSAGE_DELETE`：移除指定 SC，并阻止该 SC 在当前房间缓存里被重放。
 - 不重复插入 `COMBO_SEND` 汇总和日文 SC 副本。
 
-接收范围是连接期间的实时事件，不提供历史礼物账单或开播前的历史 SC 回放。各房间独立保留最近 500 条消息，关掉聊天显示仍继续接收。
+接收范围是连接期间的实时事件，额外补取仍在有效期的 SC；不提供历史礼物账单或已过期 SC 回放。各房间独立保留最近 500 条消息，关掉聊天显示仍继续接收。
+
+视频 SC 浮层以服务端 `start_time/end_time` 为准；仅在缺失 end_time 且有 start_time/time 时求和，缺少可靠时间则只进入聊天列表。延迟到达、重连、标签切换及视频暂停均不重置结束时间。浮层使用所属窗口的 Qt Tool 窗口覆盖 VLC 原生视频子窗口，鼠标穿透且不抢焦点，不使用系统全局置顶；最小化时隐藏但继续到期清理。
 
 新版礼物字段依据上述官方 app 脚本内 `bilibili.live.gift.v1.SendGiftBroadcast`：1=uid、2=uname、10=重复 GiftItem、15=sender_uinfo；GiftItem 的 1=gift_id、2=gift_name、3=num、9=tid。UserInfo 的 1=uid、2=Base；Base 的 1=name。只解析显示所需字段，跳过其他字段；校验长度、类型与 varint 边界，坏包不会中断后续消息。

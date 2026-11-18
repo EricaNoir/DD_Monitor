@@ -37,6 +37,9 @@ QPushButton#SidebarAdd { border-top: 1px solid #3b3b3b; border-radius: 0; text-a
 QPushButton#ClosePlayer { color: #999999; font-size: 18px; padding: 0; }
 QPushButton#ClosePlayer:hover { color: white; background: #653333; }
 QFrame#RoomChat { background: #232323; border: 0; border-left: 1px solid #353535; }
+QTabBar#ChatTabs::tab { background: transparent; color: #949494; padding: 5px 2px; border-bottom: 2px solid transparent; font-size: 11px; }
+QTabBar#ChatTabs::tab:selected { color: #ededed; border-bottom-color: #b7b7b7; }
+QTabBar#ChatTabs::tab:hover { color: #dedede; }
 QTextBrowser { background: #232323; border: 0; padding: 4px; selection-background-color: #515151; }
 QSplitter::handle { background: #272727; }
 QSplitter::handle:hover { background: #646464; }

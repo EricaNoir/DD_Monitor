@@ -396,6 +396,7 @@ class StudioWindow(QMainWindow):
             tile.set_muted(saved.get('muted', tile.index != 0))
             tile.quality.setCurrentIndex(max(0, tile.quality.findData(saved.get('quality', 250))))
             tile.chat_width = max(145, int(saved.get('chat_width', 195)))
+            tile.chat_tabs.setCurrentIndex(max(0, min(3, int(saved.get('chat_filter', 0)))))
             tile.chat_toggle.setChecked(saved.get('chat_visible', self.state['chat_visible']))
             tile.toggle_chat(tile.chat_toggle.isChecked())
         self.splitter.addWidget(self.video_area)
@@ -791,7 +792,7 @@ class StudioWindow(QMainWindow):
     def toggle_names(self, shown):
         for tile in self.tiles:
             tile.chat_view.names = shown
-            tile.chat_view.show_history(tile.history)
+            tile.refresh_chat()
         self.save()
 
     def set_follow(self, follow):
@@ -848,6 +849,7 @@ class StudioWindow(QMainWindow):
         for tile in self.tiles:
             tile.cookies = cookies
             if tile.room:
+                tile.composer.set_room(tile.room, cookies)
                 tile.reload(reconnect_chat=True)
         self.notice.setText('登录成功，已刷新视频与聊天连接。')
         for dialog in self.dialogs:
@@ -884,10 +886,14 @@ class StudioWindow(QMainWindow):
                           'slot_settings': {str(tile.index): {'volume': tile.volume.value(), 'muted': tile.muted,
                                             'quality': tile.quality.currentData(),
                                             'chat_visible': tile.chat_toggle.isChecked(),
-                                            'chat_width': tile.chat_width} for tile in self.tiles}})
+                                            'chat_width': tile.chat_width,
+                                            'chat_filter': tile.chat_tabs.currentIndex()} for tile in self.tiles}})
         save_json(self.state_path, self.state)
 
     def closeEvent(self, event):
+        if any(tile.composer.sending for tile in self.tiles):
+            event.ignore()
+            return
         if any(isinstance(d, PaymentDialog) and d.busy and d.isVisible() for d in self.dialogs):
             event.ignore()
             return

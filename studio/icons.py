@@ -44,6 +44,9 @@ def icon(name):
         path.lineTo(21,15); path.quadTo(21,17,19,17); path.lineTo(10,17); path.lineTo(5,21)
         path.lineTo(5,17); path.quadTo(3,17,3,15); path.lineTo(3,6); path.quadTo(3,4,5,4)
         p.drawPath(path); line(7,9,17,9); line(7,13,13,13)
+    elif name == 'send':
+        p.drawPolygon(QPolygonF([QPointF(4,4), QPointF(21,12), QPointF(4,20), QPointF(7,12)]))
+        line(7,12,15,12)
     elif name == 'gift':
         p.drawRect(QRectF(4, 9, 16, 4)); p.drawRect(QRectF(6, 13, 12, 8))
         line(12, 9, 12, 21)

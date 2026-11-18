@@ -3,8 +3,10 @@ from PySide6.QtCore import Qt, Signal, QTimer, QThreadPool, QMimeData
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                                QSlider, QStackedWidget, QSplitter, QMenu, QWidgetAction,
-                               QSizePolicy, QStylePainter, QStyleOptionButton, QStyle, QApplication)
+                               QSizePolicy, QStylePainter, QStyleOptionButton, QStyle, QApplication, QTabBar)
 from .chat import ChatView
+from .composer import ChatComposer
+from .sc_overlay import SCOverlay
 from .services import BiliAPI, Job, ChatWorker
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox
@@ -145,6 +147,7 @@ class PlayerTile(QFrame):
         self.surface.setObjectName('Surface')
         self.surface.setAttribute(Qt.WA_NativeWindow)
         self.stack.addWidget(self.surface)
+        self.sc_overlay = SCOverlay(self.stack)
         self.content_splitter = QSplitter(Qt.Horizontal)
         self.content_splitter.setChildrenCollapsible(False)
         self.content_splitter.setHandleWidth(4)
@@ -156,8 +159,20 @@ class PlayerTile(QFrame):
         chat_layout = QVBoxLayout(self.chat_panel)
         chat_layout.setContentsMargins(6, 6, 6, 5)
         chat_layout.setSpacing(4)
+        self.chat_tabs = QTabBar()
+        self.chat_tabs.setObjectName('ChatTabs')
+        self.chat_tabs.setExpanding(True)
+        self.chat_tabs.setDrawBase(False)
+        self.chat_tabs.setUsesScrollButtons(False)
+        for title, kind in [('全部', 'all'), ('聊天', 'chat'), ('礼物', 'gift'), ('SC', 'sc')]:
+            tab = self.chat_tabs.addTab(title)
+            self.chat_tabs.setTabData(tab, kind)
+        self.chat_tabs.currentChanged.connect(self.change_chat_filter)
+        chat_layout.addWidget(self.chat_tabs)
         self.chat_view = ChatView()
         chat_layout.addWidget(self.chat_view, 1)
+        self.composer = ChatComposer(self)
+        chat_layout.addWidget(self.composer)
         chat_footer = QHBoxLayout()
         self.chat_connection = QLabel('等待连接')
         self.chat_connection.setObjectName('Muted')
@@ -336,6 +351,7 @@ class PlayerTile(QFrame):
     def set_room(self, room):
         self.clear(emit=False)
         self.room = dict(room)
+        self.composer.set_room(self.room, self.cookies, load=bool(self.instance))
         self.gift_button.setEnabled(True)
         self.update_title()
         self.name.setToolTip(room.get('title', '') + '\n房号 ' + room['id'])
@@ -437,10 +453,11 @@ class PlayerTile(QFrame):
             if message.get('kind') == 'sc_delete':
                 ids = set(message.get('ids', []))
                 self.deleted_sc.extend(ids)
+                self.sc_overlay.remove_ids(ids)
                 kept = [m for m in self.history if not (m.get('kind') == 'sc' and m.get('id') in ids)]
                 self.history.clear()
                 self.history.extend(kept)
-                self.chat_view.show_history(self.history)
+                self.refresh_chat()
                 return
             if message.get('kind') == 'sc' and message.get('id') in self.deleted_sc:
                 return
@@ -448,8 +465,22 @@ class PlayerTile(QFrame):
             if event_id and any(m.get('event_id') == event_id for m in self.history):
                 return
             self.history.append(message)
-            self.chat_view.add_message(message)
+            if message.get('kind') == 'sc':
+                self.sc_overlay.add_message(message)
+            if self.accepts_chat(message):
+                self.chat_view.add_message(message)
             self.chat_received.emit(self.index, message)
+
+    def accepts_chat(self, message):
+        kind = self.chat_tabs.tabData(self.chat_tabs.currentIndex())
+        return kind == 'all' or message.get('kind', 'chat') == kind
+
+    def refresh_chat(self):
+        self.chat_view.show_history(m for m in self.history if self.accepts_chat(m))
+
+    def change_chat_filter(self, *_):
+        self.refresh_chat()
+        self.changed.emit()
 
     def set_chat_status(self, worker, text):
         if worker is self.chat_worker:
@@ -480,6 +511,8 @@ class PlayerTile(QFrame):
         self._audio_pending = False
         self.retire_chat()
         self.history.clear()
+        self.sc_overlay.clear()
+        self.composer.set_room(None, {})
         self.deleted_sc.clear()
         self.chat_view.clear()
         self.chat_connection.setText('等待连接')
@@ -498,6 +531,7 @@ class PlayerTile(QFrame):
 
     def shutdown(self):
         self.monitor.stop()
+        self.sc_overlay.shutdown()
         self.clear(emit=False)
         for worker in list(self.retiring):
             worker.stop()

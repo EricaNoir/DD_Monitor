@@ -105,6 +105,91 @@ class UITests(unittest.TestCase):
         self.assertIn('小花花 × 3', text)
         self.assertIn('赞 × 2', text)
 
+    def test_chat_tabs_filter_history_and_new_messages_and_persist(self):
+        tile = self.window.tiles[0]
+        for message in ({'name': '观众', 'text': '普通聊天'},
+                        {'kind': 'gift', 'name': '观众', 'text': '赠送礼物'},
+                        {'kind': 'sc', 'id': '1', 'name': '观众', 'text': '醒目留言', 'price': '30'}):
+            tile.receive_chat(None, message)
+        tile.chat_tabs.setCurrentIndex(2)
+        self.assertIn('赠送礼物', tile.chat_view.toPlainText())
+        self.assertNotIn('普通聊天', tile.chat_view.toPlainText())
+        self.window.toggle_names(False)
+        self.assertNotIn('醒目留言', tile.chat_view.toPlainText())
+        tile.receive_chat(None, {'name': '观众', 'text': '新的聊天'})
+        self.assertNotIn('新的聊天', tile.chat_view.toPlainText())
+        tile.chat_tabs.setCurrentIndex(1)
+        self.assertIn('新的聊天', tile.chat_view.toPlainText())
+        self.assertNotIn('赠送礼物', tile.chat_view.toPlainText())
+        self.window.demo = False
+        self.window.save()
+        self.assertEqual(load_state(self.path)['slot_settings']['0']['chat_filter'], 1)
+
+    def test_sc_overlay_uses_remaining_server_time_and_expires_independently(self):
+        import time
+        now = time.time()
+        tile = self.window.tiles[0]
+        message = {'kind': 'sc', 'id': 'timer', 'event_id': 'sc:timer', 'name': '示例观众',
+                   'text': '这是 SC 浮层预览，感谢今天的直播！', 'price': '30',
+                   'start_time': now - 50, 'end_time': now + 10, 'duration': 60}
+        tile.chat_tabs.setCurrentIndex(1)
+        tile.receive_chat(None, message)
+        self.app.processEvents()
+        overlay = tile.sc_overlay
+        self.assertTrue(overlay.isVisible())
+        self.assertNotIn('SC 浮层', tile.chat_view.toPlainText())
+        self.assertLessEqual(overlay.cards[0][2].value(), 167)
+        self.assertTrue(overlay.windowFlags() & Qt.WindowTransparentForInput)
+        tile.chat_toggle.setChecked(False)
+        overlay.sync(now + 1)
+        self.assertTrue(overlay.isVisible())
+        tile.chat_toggle.setChecked(True)
+        tile.chat_tabs.setCurrentIndex(0)
+        self.app.processEvents()
+        overlay.sync(now + 1)
+        folder = ROOT / '.qa'
+        folder.mkdir(exist_ok=True)
+        overlay.grab().save(str(folder / 'sc-overlay.png'))
+        tile.grab().save(str(folder / 'chat-tabs-composer.png'))
+        overlay.sync(now + 11)
+        self.assertFalse(overlay.isVisible())
+        self.assertFalse(overlay.active)
+        self.assertIn('SC 浮层', tile.chat_view.toPlainText())
+
+    def test_sc_overlay_delete_and_clear_do_not_leave_floating_windows(self):
+        import time
+        now = time.time()
+        tile = self.window.tiles[0]
+        message = {'kind': 'sc', 'id': 'delete', 'name': '观众', 'text': 'SC', 'price': '30',
+                   'start_time': now - 5, 'end_time': now + 60}
+        tile.receive_chat(None, message)
+        tile.receive_chat(None, {'kind': 'sc_delete', 'ids': ['delete']})
+        self.assertFalse(tile.sc_overlay.active)
+        tile.receive_chat(None, dict(message, id='other'))
+        tile.clear()
+        self.assertFalse(tile.sc_overlay.isVisible())
+        self.assertFalse(tile.sc_overlay.active)
+
+    def test_sc_overlay_hidden_window_still_expires_and_future_sc_waits(self):
+        import time
+        now = time.time()
+        overlay = self.window.tiles[0].sc_overlay
+        message = {'id': 'future', 'name': '观众', 'text': 'SC', 'price': '30',
+                   'start_time': now + 10, 'end_time': now + 70}
+        overlay.add_message(message, now)
+        self.assertFalse(overlay.isVisible())
+        overlay.sync(now + 11)
+        self.assertTrue(overlay.isVisible())
+        self.window.hide()
+        overlay.sync(now + 20)
+        self.assertFalse(overlay.isVisible())
+        self.assertTrue(overlay.active)
+        overlay.sync(now + 71)
+        self.window.show()
+        self.app.processEvents()
+        self.assertFalse(overlay.active)
+        self.assertFalse(overlay.isVisible())
+
     def test_activity_is_per_room_deduplicated_and_sc_delete_is_applied(self):
         tile, other = self.window.tiles[:2]
         event = {'kind': 'sc', 'id': '42', 'event_id': 'sc:42', 'name': '观众', 'text': '醒目留言', 'price': '30'}

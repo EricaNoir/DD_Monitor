@@ -4,6 +4,9 @@ import html
 import json
 import re
 import threading
+import time
+import hashlib
+from urllib.parse import urlencode, quote
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 
@@ -58,6 +61,48 @@ class BiliAPI:
         if body.get('code', 0) != 0:
             raise ValueError(f"B站返回：{body.get('message', body.get('msg', '请求未成功'))} ({body.get('code')})")
         return body.get('data') or {}
+
+    def chat_limit(self, rid):
+        if not all(self.session.cookies.get_dict().get(k) for k in ('SESSDATA', 'bili_jct')):
+            raise ValueError('请先点击顶部账号图标登录 B 站。')
+        data = self.get('https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByUser', room_id=int(rid))
+        limit = int(((data.get('property') or {}).get('danmu') or {}).get('length') or 20)
+        return max(1, min(limit, 500))
+
+    def send_chat(self, rid, text):
+        text = text.strip()
+        limit = self.chat_limit(rid)
+        if not text or len(text.encode('utf-16-le')) // 2 > limit:
+            raise ValueError(f'请输入 1–{limit} 字的弹幕。')
+        nav = self.get('https://api.bilibili.com/x/web-interface/nav')
+        if not nav.get('isLogin'):
+            raise ValueError('登录已过期，请重新扫码。')
+        keys = nav.get('wbi_img') or {}
+        joined = ''.join(str(keys.get(k, '')).rpartition('/')[2].split('.')[0] for k in ('img_url', 'sub_url'))
+        table = (46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13)
+        if len(joined) < 64:
+            raise ValueError('暂时无法获取发送签名，请稍后再试。')
+        key = ''.join(joined[i] for i in table)
+        params = {'web_location': '444.8', 'wts': str(int(time.time()))}
+        params['w_rid'] = hashlib.md5((urlencode(sorted(params.items()), quote_via=quote) + key).encode()).hexdigest()
+        csrf = self.session.cookies.get_dict()['bili_jct']
+        payload = {'msg': text, 'roomid': int(rid), 'color': 16777215, 'fontsize': 25,
+                   'mode': 1, 'rnd': int(time.time()), 'bubble': 0, 'dm_type': 0,
+                   'csrf': csrf, 'csrf_token': csrf}
+        try:
+            response = self.session.post('https://api.live.bilibili.com/msg/send', params=params,
+                                         data=payload, timeout=(5, 12), allow_redirects=False)
+            response.raise_for_status()
+            body = response.json()
+        except (requests.RequestException, ValueError) as error:
+            raise ValueError('发送结果未确认，请核对聊天记录后再试；没有自动重发。') from error
+        if not isinstance(body, dict) or not isinstance(body.get('code'), int):
+            raise ValueError('发送结果未确认，请核对聊天记录。')
+        message = body.get('message') or body.get('msg') or ''
+        # This endpoint can return code=0 with a nonempty rejection message.
+        if body['code'] != 0 or message not in ('', '0', 'OK', 'ok', 'success'):
+            raise ValueError(str(message or 'B 站未接受这条弹幕。'))
+        return True
 
     def search(self, query, page=1):
         number = room_number(query)
@@ -218,6 +263,8 @@ def parse_activity(command):
             return {'kind': 'sc', 'id': sid, 'event_id': 'sc:' + sid, 'uid': str(data.get('uid', '')),
                     'name': str(base.get('name') or user.get('uname') or (user.get('base') or {}).get('name') or '观众'),
                     'text': str(data.get('message', '')), 'price': str(data.get('price', 0)),
+                    'start_time': data.get('start_time', 0), 'end_time': data.get('end_time', 0),
+                    'duration': data.get('time', 0),
                     'medal': str(medal.get('medal_name', '')), 'level': str(medal.get('medal_level', ''))}
         if kind in ('SEND_GIFT', 'GUARD_BUY'):
             count = int(data.get('num', 0))
@@ -282,6 +329,23 @@ class ChatWorker(QThread):
             if not self.stop_requested.is_set():
                 self.status.emit('聊天连接中断，可点击重连')
 
+    async def load_active_sc(self, session):
+        try:
+            async with session.get('https://api.live.bilibili.com/av/v1/SuperChat/getMessageList',
+                                   params={'room_id': self.rid}) as response:
+                if response.status != 200:
+                    return
+                body = await response.json()
+            if body.get('code') != 0:
+                return
+            for data in (body.get('data') or {}).get('list') or []:
+                if float(data.get('end_time') or 0) > time.time() and not self.stop_requested.is_set():
+                    message = parse_activity({'cmd': 'SUPER_CHAT_MESSAGE', 'data': data})
+                    if message:
+                        self.message.emit(message)
+        except (ValueError, TypeError, KeyError, AttributeError, OSError, asyncio.TimeoutError):
+            pass  # A failed preload must not interrupt the live socket.
+
     async def listen(self):
         import aiohttp
         import blivedm
@@ -306,8 +370,11 @@ class ChatWorker(QThread):
             client.set_handler(Handler())
             self.status.emit('正在连接聊天…')
             client.start()
+            active_sc = asyncio.create_task(self.load_active_sc(session))
             try:
                 while not self.stop_requested.is_set() and client.is_running:
                     await asyncio.sleep(.2)
             finally:
+                active_sc.cancel()
+                await asyncio.gather(active_sc, return_exceptions=True)
                 await client.stop_and_close()
