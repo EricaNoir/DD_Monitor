@@ -308,6 +308,23 @@ class UITests(unittest.TestCase):
         self.assertTrue(again.tiles[1].chat_panel.isVisible())
         again.close()
 
+    def test_followings_live_first_across_pages_preserves_checks(self):
+        dialog = SearchDialog({}, 0, 4, self.window)
+        def room(rid, live):
+            return {'id': rid, 'name': rid, 'live': live, 'following': True}
+        def order():
+            return [item.data(Qt.UserRole)['id'] for item in dialog.items(dialog.results)]
+        dialog.show_results(dialog.ticket, {'rooms': [room('1', False), room('2', True)],
+                                           'more': True, 'follow_state': 'ok'})
+        self.assertEqual(order(), ['2', '1'])
+        dialog.results.item(1).setCheckState(Qt.Checked)
+        dialog.query = '关注内搜索'
+        dialog.show_results(dialog.ticket, {'rooms': [room('3', False), room('4', True)],
+                                           'more': False, 'follow_state': 'ok', 'page': 2})
+        self.assertEqual(order(), ['2', '4', '1', '3'])
+        self.assertEqual([r['id'] for r in dialog.selected_rooms()], ['1'])
+        dialog.close()
+
     def test_search_selection_and_stale_response(self):
         dialog = SearchDialog({}, 0, 4, self.window)
         dialog.mode = 'search'

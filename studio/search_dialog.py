@@ -268,6 +268,13 @@ class SearchDialog(QDialog):
             item.setSizeHint(QSize(0, 70))
             self.results.addItem(item)
             existing[key] = item
+        if self.mode == 'following':
+            # Include previous pages so newly loaded live rooms join the front.
+            ordered = sorted(self.items(self.results), key=lambda item: not item.data(Qt.UserRole).get('live', False))
+            for index, item in enumerate(ordered):
+                current = self.results.row(item)
+                if current != index:
+                    self.results.insertItem(index, self.results.takeItem(current))
         self.results.blockSignals(False)
         known = any(item.data(Qt.UserRole).get('following') is not None for item in self.items(self.results))
         self.follow_filter.setEnabled(known)
