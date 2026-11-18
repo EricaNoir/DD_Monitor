@@ -37,9 +37,12 @@ SC：`POST /xlive/revenue/v1/order/createOrder`，字段为 `context_id=房号, 
 ## 接收
 
 - `SEND_GIFT`：赠送者、礼物名、数量；使用实际交易 `tid` 去重，不把可能共用的 `rnd` 当交易 ID。
+- `SEND_GIFT_V2`：解码 `data.pb` 中 base64 protobuf 的 `SendGiftBroadcast`，展开重复 `gift_list`，逐条显示名称和数量。兼容旧事件名携带 protobuf 及 JSON 礼物批次；同一交易里的不同礼物按礼物 ID 分开去重。赠送者优先使用 `sender_uinfo.base.name`。
 - `GUARD_BUY`：显示大航海购买事件，但不提供内置购买入口。
 - `SUPER_CHAT_MESSAGE`：金额、赠送者、留言，按 SC ID 去重。支持新 `uinfo.base.name` 和旧 `user_info.uname`。
 - `SUPER_CHAT_MESSAGE_DELETE`：移除指定 SC，并阻止该 SC 在当前房间缓存里被重放。
 - 不重复插入 `COMBO_SEND` 汇总和日文 SC 副本。
 
 接收范围是连接期间的实时事件，不提供历史礼物账单或开播前的历史 SC 回放。各房间独立保留最近 500 条消息，关掉聊天显示仍继续接收。
+
+新版礼物字段依据上述官方 app 脚本内 `bilibili.live.gift.v1.SendGiftBroadcast`：1=uid、2=uname、10=重复 GiftItem、15=sender_uinfo；GiftItem 的 1=gift_id、2=gift_name、3=num、9=tid。UserInfo 的 1=uid、2=Base；Base 的 1=name。只解析显示所需字段，跳过其他字段；校验长度、类型与 varint 边界，坏包不会中断后续消息。

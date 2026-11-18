@@ -92,6 +92,19 @@ class UITests(unittest.TestCase):
         self.app.processEvents()
         self.temp.cleanup()
 
+    def test_protobuf_gifts_reach_chat_and_batch_is_not_dropped(self):
+        from studio.services import parse_messages
+        from test_gift_proto import broadcast
+        tile = self.window.tiles[0]
+        messages = parse_messages({'cmd': 'SEND_GIFT_V2', 'data': {'pb': broadcast()}})
+        for message in messages + messages:
+            tile.receive_chat(None, message)
+        self.assertEqual(len(tile.history), 2)
+        text = tile.chat_view.toPlainText()
+        self.assertIn('示例赠送者', text)
+        self.assertIn('小花花 × 3', text)
+        self.assertIn('赞 × 2', text)
+
     def test_activity_is_per_room_deduplicated_and_sc_delete_is_applied(self):
         tile, other = self.window.tiles[:2]
         event = {'kind': 'sc', 'id': '42', 'event_id': 'sc:42', 'name': '观众', 'text': '醒目留言', 'price': '30'}

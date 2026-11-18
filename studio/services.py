@@ -8,6 +8,7 @@ from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 
 import requests
+from .gift_proto import decode_gift
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal, Slot
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
@@ -222,16 +223,44 @@ def parse_activity(command):
             count = int(data.get('num', 0))
             if count <= 0:
                 return None
-            name = data.get('uname') or data.get('username') or (data.get('uinfo') or {}).get('base', {}).get('name') or '观众'
+            sender = data.get('sender_uinfo') or data.get('uinfo') or {}
+            name = (sender.get('base') or {}).get('name') or data.get('uname') or data.get('username') or '观众'
+            uid = str(sender.get('uid') or data.get('uid', ''))
             gift = data.get('giftName') or data.get('gift_name') or '礼物'
+            gift_id = str(data.get('giftId') or data.get('gift_id') or '')
             # rnd can be shared by separate gifts in the same second/session.
             transaction = str(data.get('tid') or '')
-            return {'kind': 'gift', 'name': str(name), 'uid': str(data.get('uid', '')),
+            return {'kind': 'gift', 'name': str(name), 'uid': uid,
                     'text': f'赠送 {gift} × {count}', 'gift': str(gift), 'quantity': count,
-                    'event_id': f'gift:{data.get("uid", "")}:{transaction}' if transaction else ''}
+                    'event_id': f'gift:{uid}:{transaction}:{gift_id}' if transaction else ''}
     except (TypeError, ValueError, KeyError, AttributeError):
         return None
     return None
+
+
+def parse_messages(command):
+    """One V2 broadcast may contain multiple gifts, each with its own count/ID."""
+    kind = str(command.get('cmd', '')).split(':')[0]
+    data = command.get('data')
+    if kind in ('SEND_GIFT', 'SEND_GIFT_V2') and isinstance(data, dict):
+        try:
+            if data.get('pb'):
+                data = decode_gift(data['pb'])
+            if 'gift_list' in data:
+                result = []
+                for item in data['gift_list']:
+                    # Sender belongs to the broadcast, not the receiving GiftItem.
+                    merged = dict(item, uid=data.get('uid', ''), uname=data.get('uname', ''),
+                                  sender_uinfo=data.get('sender_uinfo') or {})
+                    message = parse_activity({'cmd': 'SEND_GIFT', 'data': merged})
+                    if message:
+                        result.append(message)
+                return result
+            command = dict(command, cmd='SEND_GIFT', data=data)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return []
+    message = parse_activity(command) or parse_chat(command)
+    return [message] if message else []
 
 
 class ChatWorker(QThread):
@@ -261,10 +290,9 @@ class ChatWorker(QThread):
 
         class Handler(blivedm.BaseHandler):
             def handle(self, client, command):
-                message = parse_activity(command) or parse_chat(command)
-                if message:
+                for message in parse_messages(command):
                     owner.message.emit(message)
-                elif command.get('cmd') == '_HEARTBEAT':
+                if command.get('cmd') == '_HEARTBEAT':
                     owner.status.emit('聊天已连接')
 
         async with aiohttp.ClientSession(headers=HEADERS, timeout=aiohttp.ClientTimeout(total=20), trust_env=True) as session:
