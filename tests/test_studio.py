@@ -114,12 +114,12 @@ class UITests(unittest.TestCase):
         c.send()
         self.app.processEvents()
         self.assertEqual(positions(), before)
-        self.assertEqual(tile.chat_connection.text(), '发送中…')
+        self.assertIn('发送中…', c.input.toolTip())
         c.sent(c.ticket, '我的消息', '99')
         self.app.processEvents()
         self.assertEqual(positions(), before)
         self.assertEqual(c.status_text, '')
-        self.assertEqual(tile.chat_connection.text(), '已连接')
+        self.assertEqual(c.input.toolTip(), '')
         self.assertEqual(bar.value(), bar.maximum())
         bar.setValue(0)
         tile.receive_chat(None, {'uid': '99', 'name': '我', 'text': '我的消息'})
@@ -129,7 +129,7 @@ class UITests(unittest.TestCase):
         c.failed(c.ticket, '发送失败，请稍后重试。' * 10 + '\n网络错误')
         self.app.processEvents()
         self.assertEqual(positions(), before)
-        self.assertIn('网络错误', tile.chat_connection.toolTip())
+        self.assertIn('网络错误', c.input.toolTip())
         c.status('')
         folder = ROOT / '.qa'
         folder.mkdir(exist_ok=True)
@@ -476,7 +476,8 @@ class UITests(unittest.TestCase):
             tile.empty_hint.setText('界面预览 · 示例聊天数据')
         for tile in w.tiles[:4]:
             tile.empty_add.hide()
-            tile.chat_connection.setText('已连接')
+            tile.chat_status = '已连接'
+            tile.refresh_chat_status()
             for i in range(12):
                 tile.receive_chat(None, {'name': ['山间的风', '一只观众', '周末看直播'][i % 3],
                     'text': [f'这里是 {tile.room["name"]} 的聊天', '这个操作可以！', '每个房间的消息分开看'][i % 3],

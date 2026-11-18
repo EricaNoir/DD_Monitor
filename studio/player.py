@@ -71,7 +71,6 @@ class PlayerTile(QFrame):
         self.history = deque(maxlen=500)
         self.deleted_sc = deque(maxlen=500)
         self.chat_status = '选择直播间后显示聊天'
-        self.send_status = ''
         self.pending_sent = None
         self.muted = index != 0
         self.paused = False
@@ -176,21 +175,7 @@ class PlayerTile(QFrame):
         chat_layout.addWidget(self.chat_view, 1)
         self.composer = ChatComposer(self)
         chat_layout.addWidget(self.composer)
-        chat_footer = QHBoxLayout()
-        self.chat_connection = QLabel('等待连接')
-        self.chat_connection.setTextFormat(Qt.PlainText)
-        self.chat_connection.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.chat_connection.setMinimumWidth(0)
-        self.chat_connection.setObjectName('Muted')
-        self.chat_connection.setToolTip(self.chat_status)
-        chat_footer.addWidget(self.chat_connection, 1)
-        self.chat_bottom = QPushButton('最新 ↓')
-        self.chat_bottom.setToolTip('回到最新消息')
-        decorate(self.chat_bottom, 'bottom', '回到最新消息', 24)
-        self.chat_bottom.clicked.connect(lambda: self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum()))
-        chat_footer.addWidget(self.chat_bottom)
-        chat_layout.addLayout(chat_footer)
-        self.composer.feedback_changed.connect(self.set_send_status)
+        self.refresh_chat_status()
         self.composer.message_sent.connect(self.scroll_after_send)
         self.content_splitter.addWidget(self.chat_panel)
         self.content_splitter.setStretchFactor(0, 1)
@@ -495,15 +480,8 @@ class PlayerTile(QFrame):
         self.scroll_chat_latest()
         QTimer.singleShot(0, self.scroll_chat_latest)
 
-    def set_send_status(self, text):
-        self.send_status = text
-        self.refresh_chat_status()
-
     def refresh_chat_status(self):
-        text = self.chat_status
-        self.chat_connection.setText(self.send_status.replace('\n', ' ') if self.send_status else
-                                     ('已连接' if '已连接' in text else ('连接中' if '连接' in text else text)))
-        self.chat_connection.setToolTip(self.send_status or text)
+        self.chat_tabs.setToolTip(self.chat_status)
 
     def accepts_chat(self, message):
         kind = self.chat_tabs.tabData(self.chat_tabs.currentIndex())
@@ -549,7 +527,6 @@ class PlayerTile(QFrame):
         self.composer.set_room(None, {})
         self.deleted_sc.clear()
         self.chat_view.clear()
-        self.chat_connection.setText('等待连接')
         self.room = None
         self.gift_button.setEnabled(False)
         self.paused = False
@@ -560,6 +537,7 @@ class PlayerTile(QFrame):
         self.stack.setCurrentIndex(0)
         self.set_status('等待添加 · 支持拖入主播')
         self.chat_status = '选择直播间后显示聊天'
+        self.refresh_chat_status()
         if emit:
             self.changed.emit()
 

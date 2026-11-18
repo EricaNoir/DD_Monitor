@@ -1,11 +1,11 @@
-from PySide6.QtCore import QThreadPool, QTimer, Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton
+from html import escape
+from PySide6.QtCore import QPoint, QThreadPool, QTimer, Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QToolTip
 from .services import BiliAPI, Job
 from .icons import decorate
 
 
 class ChatComposer(QWidget):
-    feedback_changed = Signal(str)
     message_sent = Signal(str, str)
 
     def __init__(self, parent=None):
@@ -39,7 +39,9 @@ class ChatComposer(QWidget):
 
     def status(self, text):
         self.status_text = text
-        self.feedback_changed.emit(text)
+        self.input.setToolTip('<qt>' + escape(text) + '</qt>' if text else '')
+        self.input.setAccessibleDescription(text)
+        self.button.setToolTip(text or '发送弹幕 · Enter')
 
     def run_job(self, work, done, failed):
         job = Job(work)
@@ -125,3 +127,5 @@ class ChatComposer(QWidget):
         self.input.setEnabled(bool(self.room))
         self.status(error)
         self.update_button()
+        if self.isVisible():
+            QToolTip.showText(self.input.mapToGlobal(QPoint(0, 0)), '<qt>' + escape(error) + '</qt>', self.input)

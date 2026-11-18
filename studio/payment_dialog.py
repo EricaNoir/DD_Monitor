@@ -1,7 +1,7 @@
 from decimal import Decimal
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSpinBox, QPlainTextEdit, QFormLayout, QWidget, QFrame)
+                               QSpinBox, QPlainTextEdit, QFormLayout, QWidget, QFrame, QTabBar)
 from .widgets import BelowComboBox
 from .services import Job
 from .payments import PaymentAPI, PaymentUnknown, battery, gift_limit
@@ -110,10 +110,14 @@ class PaymentDialog(QDialog):
         form = QFormLayout(self.form)
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(14)
-        self.kind = BelowComboBox()
-        self.kind.addItem('礼物', 'gift')
-        self.kind.addItem('SC · 醒目留言', 'sc')
-        form.addRow('类型', self.kind)
+        self.kind = QTabBar()
+        self.kind.setObjectName('SearchTabs')
+        self.kind.setExpanding(True)
+        self.kind.setDrawBase(False)
+        self.kind.setAccessibleName('礼物或 SC')
+        self.kind.setTabData(self.kind.addTab('礼物'), 'gift')
+        self.kind.setTabData(self.kind.addTab('SC'), 'sc')
+        form.addRow(self.kind)
         self.item = BelowComboBox()
         form.addRow('选择', self.item)
         self.quantity = QSpinBox()
@@ -149,7 +153,7 @@ class PaymentDialog(QDialog):
         self.send_button.clicked.connect(self.prepare)
         footer.addWidget(self.send_button)
         box.addLayout(footer)
-        self.kind.currentIndexChanged.connect(self.populate)
+        self.kind.currentChanged.connect(self.populate)
         self.item.currentIndexChanged.connect(self.update_total)
         self.quantity.valueChanged.connect(self.update_total)
         self.message.textChanged.connect(self.update_total)
@@ -185,7 +189,7 @@ class PaymentDialog(QDialog):
         self.set_busy(False)
 
     def populate(self, *_):
-        sc = self.kind.currentData() == 'sc'
+        sc = self.kind.tabData(self.kind.currentIndex()) == 'sc'
         self.quantity.setVisible(not sc)
         self.quantity_label.setVisible(not sc)
         self.message.setVisible(sc)
@@ -212,7 +216,7 @@ class PaymentDialog(QDialog):
         entry = self.item.currentData()
         valid = bool(entry and self.panel)
         if valid:
-            sc = self.kind.currentData() == 'sc'
+            sc = self.kind.tabData(self.kind.currentIndex()) == 'sc'
             if sc:
                 total = int(Decimal(str(entry['price'])) * 1000)
                 length = len(self.message.toPlainText().encode('utf-16-le')) // 2
@@ -237,7 +241,7 @@ class PaymentDialog(QDialog):
         if not self.send_button.isEnabled():
             return
         entry = self.item.currentData()
-        kind, count, text = self.kind.currentData(), self.quantity.value(), self.message.toPlainText()
+        kind, count, text = self.kind.tabData(self.kind.currentIndex()), self.quantity.value(), self.message.toPlainText()
         self.set_busy(True)
         self.status.setText('正在核对价格、余额和发送资格…')
         self.run_job(lambda: self.api.prepare(self.room['id'], kind, entry['id'], count, text), self.confirm)
