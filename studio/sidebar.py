@@ -1,4 +1,4 @@
-from .theme import COLORS, SIZES
+from .theme import COLORS, SIZES, horizontal_scrollbar_style
 """A persistent avatar rail that expands into the room library."""
 import hashlib
 import json
@@ -317,6 +317,7 @@ class FavoritesStrip(QListWidget):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFixedHeight(104)
         self.horizontalScrollBar().setObjectName('FavoriteScroll')
+        self.horizontalScrollBar().setStyleSheet(horizontal_scrollbar_style())
         self.setSpacing(3)
         self.setMouseTracking(True)
         self.setItemDelegate(FavoriteAvatarDelegate(self))

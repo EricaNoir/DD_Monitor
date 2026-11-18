@@ -38,3 +38,15 @@ def tokens():
 
 def stylesheet():
     return Template(Path(__file__).with_name('theme.qss').read_text(encoding='utf-8')).substitute(tokens())
+
+
+def horizontal_scrollbar_style():
+    # Qt's scroll-area container does not consistently inherit app-level rules.
+    # Apply this shared component directly, with the same palette tokens.
+    return Template('''
+        QScrollBar:horizontal { background: transparent; border: 0; height: 4px; margin: 0; }
+        QScrollBar::handle:horizontal { background: $border_strong; border: 0; min-width: 24px; border-radius: 2px; }
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; height: 0; border: 0; background: transparent; }
+        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; border: 0; }
+        QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal { width: 0; height: 0; border: 0; }
+    ''').substitute(tokens())
