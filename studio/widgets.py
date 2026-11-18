@@ -1,8 +1,26 @@
-from PySide6.QtCore import QPoint, QRectF
-from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QComboBox, QSpinBox, QAbstractSpinBox, QStyleOptionSpinBox, QStyle
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
+from PySide6.QtGui import QPainter, QColor
+from PySide6.QtWidgets import QWidget, QComboBox, QSpinBox, QAbstractSpinBox, QStyleOptionSpinBox, QStyle
 from .icons import paint_icon
 from .theme import COLORS, SIZES
+
+
+class StatusDot(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.color = COLORS['text_muted']
+        self.setFixedSize(10, SIZES['compact'])
+
+    def set_color(self, color):
+        self.color = color
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(self.color))
+        painter.drawEllipse(QPointF(self.width() / 2, self.height() / 2), 1.5, 1.5)
 
 
 class BelowComboBox(QComboBox):

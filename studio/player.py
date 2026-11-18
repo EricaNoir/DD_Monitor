@@ -11,7 +11,7 @@ from .composer import ChatComposer
 from .sc_overlay import SCOverlay
 from .services import BiliAPI, Job, ChatWorker
 from .icons import decorate, icon
-from .widgets import BelowComboBox as QComboBox
+from .widgets import BelowComboBox as QComboBox, StatusDot
 
 
 class RoomTitle(QPushButton):
@@ -92,15 +92,14 @@ class PlayerTile(QFrame):
         self.toolbar.setFixedHeight(SIZES['tile_toolbar'])
         header = QHBoxLayout(self.toolbar)
         header.setContentsMargins(6, 3, 6, 3)
-        header.setSpacing(3)
+        header.setSpacing(SIZES['control_gap'])
         self.name = RoomTitle(f'{index + 1:02d}   选择一个直播间')
         self.name.setObjectName('Ghost')
         self.name.setStyleSheet('text-align: left; border: 0; font-weight: 600;')
         self.name.clicked.connect(lambda: self.selected.emit(self.index))
         self.name.drag_requested.connect(self.start_tile_drag)
         header.addWidget(self.name, 1)
-        self.status_light = QLabel('•')
-        self.status_light.setFixedWidth(10)
+        self.status_light = StatusDot()
         header.addWidget(self.status_light)
         for label, tooltip, callback in [('放大', '聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(self.index))]:
             button = QPushButton(label)
@@ -196,7 +195,7 @@ class PlayerTile(QFrame):
         self.controls = QWidget()
         controls = QHBoxLayout(self.controls)
         controls.setContentsMargins(0, 0, 0, 0)
-        controls.setSpacing(2)
+        controls.setSpacing(SIZES['control_gap'])
         self.play_button = QPushButton('暂停')
         self.play_button.clicked.connect(self.toggle_pause)
         decorate(self.play_button, 'pause', '暂停直播')
@@ -211,6 +210,7 @@ class PlayerTile(QFrame):
         self.volume.setRange(0, 100)
         self.volume.setValue(35)
         self.volume.setFixedWidth(68)
+        self.volume.setFixedHeight(SIZES['compact'])
         self.volume.setToolTip('此画面音量')
         self.volume.valueChanged.connect(self.set_volume)
         controls.addWidget(self.volume, 1)
@@ -285,7 +285,7 @@ class PlayerTile(QFrame):
         self.name.setToolTip(details)
         self.status_light.setToolTip(details)
         color = COLORS['live'] if text.startswith('直播中') else (COLORS['warning'] if '失败' in text or '超时' in text else COLORS['text_muted'])
-        self.status_light.setStyleSheet(f'color: {color};')
+        self.status_light.set_color(color)
 
     def remember_chat_width(self, *_):
         if self.chat_toggle.isChecked():

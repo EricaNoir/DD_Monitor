@@ -24,7 +24,7 @@ FONTS = {
 SIZES = {
     'control': 32, 'compact': 28, 'icon': 18, 'inline_icon': 16,
     'stepper_icon': 12, 'radius': 6, 'bubble_radius': 8, 'gap': 8,
-    'rail': 42, 'tile_toolbar': 36,
+    'rail': 42, 'tile_toolbar': 36, 'control_gap': 3,
     'bubble_padding': 8, 'message_gap': 8,
 }
 ICON_STROKE = 1.75

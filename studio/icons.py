@@ -34,29 +34,28 @@ def icon_image(name, size=18, color=None, dpr=2):
         if name == 'muted':
             line(16,9,21,15); line(21,9,16,15)
         else:
-            p.drawArc(QRectF(9,7,10,10),-55*16,110*16); p.drawArc(QRectF(7,3,16,18),-50*16,100*16)
+            p.drawArc(QRectF(7,7,10,10),-55*16,110*16); p.drawArc(QRectF(5,3,16,18),-50*16,100*16)
     elif name == 'reload':
-        p.drawArc(QRectF(5,5,14,14),35*16,290*16); line(19,3,19,8); line(19,8,14,8)
+        p.drawArc(QRectF(4,4,16,16),35*16,290*16); line(20,4,20,9); line(20,9,15,9)
     elif name == 'headphones':
-        p.drawArc(QRectF(5,4,14,16),0,180*16)
+        p.drawArc(QRectF(5,5,14,14),0,180*16)
         p.drawRoundedRect(QRectF(4,11,4,8),1.3,1.3); p.drawRoundedRect(QRectF(16,11,4,8),1.3,1.3)
     elif name in ('expand','collapse'):
         for x,y,sx,sy in [(4,4,1,1),(20,4,-1,1),(4,20,1,-1),(20,20,-1,-1)]:
             if name == 'collapse': x,y,sx,sy=x+sx*5,y+sy*5,-sx,-sy
             line(x,y,x+sx*5,y); line(x,y,x,y+sy*5)
     elif name == 'chat':
-        path=QPainterPath(); path.moveTo(5,4); path.lineTo(19,4); path.quadTo(21,4,21,6)
-        path.lineTo(21,15); path.quadTo(21,17,19,17); path.lineTo(10,17); path.lineTo(5,21)
-        path.lineTo(5,17); path.quadTo(3,17,3,15); path.lineTo(3,6); path.quadTo(3,4,5,4)
-        p.drawPath(path); line(7,9,17,9); line(7,13,13,13)
+        path=QPainterPath(); path.moveTo(6,4); path.lineTo(18,4); path.quadTo(20,4,20,6)
+        path.lineTo(20,16); path.quadTo(20,18,18,18); path.lineTo(8,18); path.lineTo(4,20)
+        path.lineTo(4,6); path.quadTo(4,4,6,4)
+        p.drawPath(path); line(8,9,16,9); line(8,13,13,13)
     elif name == 'send':
         p.drawPolygon(QPolygonF([QPointF(4,4), QPointF(21,12), QPointF(4,20), QPointF(7,12)]))
         line(7,12,15,12)
     elif name == 'gift':
-        p.drawRect(QRectF(4, 9, 16, 4)); p.drawRect(QRectF(6, 13, 12, 8))
-        line(12, 9, 12, 21)
-        path=QPainterPath(); path.moveTo(12,9); path.cubicTo(2,9,6,0,12,9)
-        path.cubicTo(18,0,22,9,12,9); p.drawPath(path)
+        p.drawRect(QRectF(4, 8, 16, 4)); p.drawRect(QRectF(6, 12, 12, 8))
+        line(12, 8, 12, 20)
+        p.drawEllipse(QRectF(5, 4, 7, 4)); p.drawEllipse(QRectF(12, 4, 7, 4))
     elif name == 'add':
         line(5,12,19,12); line(12,5,12,19)
     elif name == 'close':
