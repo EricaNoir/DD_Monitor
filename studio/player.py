@@ -49,6 +49,7 @@ class RoomTitle(QPushButton):
 class PlayerTile(QFrame):
     selected = Signal(int)
     swap_requested = Signal(int, int)
+    gift_requested = Signal(int)
     add_requested = Signal(int)
     chat_requested = Signal(int)
     focus_requested = Signal(int)
@@ -65,6 +66,7 @@ class PlayerTile(QFrame):
         self.chat_worker = None
         self.retiring = []
         self.history = deque(maxlen=500)
+        self.deleted_sc = deque(maxlen=500)
         self.chat_status = '选择直播间后显示聊天'
         self.muted = index != 0
         self.paused = False
@@ -103,6 +105,10 @@ class PlayerTile(QFrame):
             header.addWidget(button)
             self.focus_button = decorate(button, 'expand', tooltip)
         self.chat_toggle = QPushButton('弹幕')
+        self.gift_button = decorate(QPushButton(), 'gift', '送礼物 / 发 SC')
+        self.gift_button.setEnabled(False)
+        self.gift_button.clicked.connect(lambda: self.gift_requested.emit(self.index))
+        header.addWidget(self.gift_button)
         self.chat_toggle.setCheckable(True)
         self.chat_toggle.setChecked(True)
         self.chat_toggle.setToolTip('显示 / 收起这个直播间的聊天')
@@ -330,6 +336,7 @@ class PlayerTile(QFrame):
     def set_room(self, room):
         self.clear(emit=False)
         self.room = dict(room)
+        self.gift_button.setEnabled(True)
         self.update_title()
         self.name.setToolTip(room.get('title', '') + '\n房号 ' + room['id'])
         self.selected.emit(self.index)
@@ -427,6 +434,19 @@ class PlayerTile(QFrame):
 
     def receive_chat(self, worker, message):
         if worker is self.chat_worker:
+            if message.get('kind') == 'sc_delete':
+                ids = set(message.get('ids', []))
+                self.deleted_sc.extend(ids)
+                kept = [m for m in self.history if not (m.get('kind') == 'sc' and m.get('id') in ids)]
+                self.history.clear()
+                self.history.extend(kept)
+                self.chat_view.show_history(self.history)
+                return
+            if message.get('kind') == 'sc' and message.get('id') in self.deleted_sc:
+                return
+            event_id = message.get('event_id')
+            if event_id and any(m.get('event_id') == event_id for m in self.history):
+                return
             self.history.append(message)
             self.chat_view.add_message(message)
             self.chat_received.emit(self.index, message)
@@ -460,9 +480,11 @@ class PlayerTile(QFrame):
         self._audio_pending = False
         self.retire_chat()
         self.history.clear()
+        self.deleted_sc.clear()
         self.chat_view.clear()
         self.chat_connection.setText('等待连接')
         self.room = None
+        self.gift_button.setEnabled(False)
         self.paused = False
         decorate(self.play_button, 'pause', '暂停直播')
         self.name.setText(f'{self.index + 1:02d}   选择一个直播间')

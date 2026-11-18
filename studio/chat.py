@@ -10,6 +10,15 @@ from .runtime import configure_qt_tls
 def message_html(message, names=True):
     name = html.escape(message.get('name', '观众'))
     text = html.escape(message.get('text', ''))
+    if message.get('kind') == 'gift':
+        sender = name + ' ' if names else ''
+        return f'<p style="margin:6px 0;color:#cbbd98;">礼物 · {sender}{text}</p>'
+    if message.get('kind') == 'sc':
+        price = html.escape(str(message.get('price', '')))
+        sender = ' · ' + name if names else ''
+        return (f'<p style="margin:8px 0;background-color:#343029;">'
+                f'<span style="color:#e8cd91;font-weight:600;">SC ¥{price}{sender}</span>'
+                f'<br><span style="color:#f0e9db;">{text.replace(chr(10), "<br>")}</span></p>')
     for token, url in sorted(message.get('images', {}).items(), key=lambda pair: -len(pair[0])):
         url = safe_image(url)
         if url:

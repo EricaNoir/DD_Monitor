@@ -12,6 +12,8 @@ from .player import PlayerTile
 from .sidebar import RoomList, AvatarStore, SearchResultDelegate
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox
+from .payment_dialog import PaymentDialog
+from .payments import PaymentAPI
 from .state import load_state, save_json, load_credentials
 
 
@@ -383,6 +385,7 @@ class StudioWindow(QMainWindow):
         for tile in self.tiles:
             tile.selected.connect(self.select_tile)
             tile.swap_requested.connect(self.swap_tiles)
+            tile.gift_requested.connect(self.open_payment)
             tile.add_requested.connect(self.open_search)
             tile.focus_requested.connect(self.focus_tile)
             tile.solo_requested.connect(self.solo_tile)
@@ -598,6 +601,19 @@ class StudioWindow(QMainWindow):
             if tile.room is None:
                 tile.set_room(item.data(Qt.UserRole))
                 return
+
+    def open_payment(self, index):
+        room = self.tiles[index].room
+        if not room:
+            return
+        for dialog in self.dialogs:
+            if isinstance(dialog, PaymentDialog) and dialog.isVisible():
+                dialog.raise_()
+                dialog.activateWindow()
+                return
+        dialog = PaymentDialog(room, self.cookies, self)
+        self.dialogs.append(dialog)
+        dialog.show()
 
     def open_search(self, target=0):
         target = target if 0 <= target < self.count else 0
@@ -817,6 +833,9 @@ class StudioWindow(QMainWindow):
                 tile.reload(reconnect_chat=True)
 
     def login(self):
+        if any(isinstance(d, PaymentDialog) and d.busy for d in self.dialogs):
+            self.notice.setText('请等送礼面板完成当前操作后再切换账号。')
+            return
         dialog = LoginDialog(self)
         dialog.authenticated.connect(self.logged_in)
         self.dialogs.append(dialog)
@@ -832,6 +851,10 @@ class StudioWindow(QMainWindow):
                 tile.reload(reconnect_chat=True)
         self.notice.setText('登录成功，已刷新视频与聊天连接。')
         for dialog in self.dialogs:
+            if isinstance(dialog, PaymentDialog) and dialog.isVisible() and not dialog.busy:
+                dialog.api = PaymentAPI(cookies)
+                if not dialog.terminal:
+                    dialog.reload()
             if isinstance(dialog, SearchDialog) and dialog.isVisible():
                 dialog.cookies = cookies
                 if dialog.mode == 'favorites':
@@ -865,6 +888,9 @@ class StudioWindow(QMainWindow):
         save_json(self.state_path, self.state)
 
     def closeEvent(self, event):
+        if any(isinstance(d, PaymentDialog) and d.busy and d.isVisible() for d in self.dialogs):
+            event.ignore()
+            return
         if not self.closing:
             self.save()
             self.closing = True

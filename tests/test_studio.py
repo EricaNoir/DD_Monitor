@@ -92,6 +92,25 @@ class UITests(unittest.TestCase):
         self.app.processEvents()
         self.temp.cleanup()
 
+    def test_activity_is_per_room_deduplicated_and_sc_delete_is_applied(self):
+        tile, other = self.window.tiles[:2]
+        event = {'kind': 'sc', 'id': '42', 'event_id': 'sc:42', 'name': '观众', 'text': '醒目留言', 'price': '30'}
+        tile.receive_chat(None, event)
+        tile.receive_chat(None, event)
+        self.assertEqual(len(tile.history), 1)
+        self.assertEqual(len(other.history), 0)
+        tile.chat_toggle.setChecked(False)
+        tile.receive_chat(None, {'kind': 'gift', 'name': '观众', 'text': '赠送 花 × 1', 'event_id': 'gift:1:2'})
+        tile.chat_toggle.setChecked(True)
+        self.assertIn('花', tile.chat_view.toPlainText())
+        tile.receive_chat(None, {'kind': 'sc_delete', 'ids': ['42']})
+        tile.receive_chat(None, event)
+        self.assertEqual(len(tile.history), 1)
+        self.assertNotIn('醒目留言', tile.chat_view.toPlainText())
+        tile.clear()
+        self.assertFalse(tile.gift_button.isEnabled())
+        self.assertFalse(tile.deleted_sc)
+
     def test_chat_toggle_keeps_history_and_restores_width(self):
         w = self.window
         tile = w.tiles[0]

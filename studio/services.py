@@ -200,6 +200,40 @@ def parse_chat(command):
             'level': str(medal[0]) if medal else '', 'images': images, 'emoji': emoji}
 
 
+def parse_activity(command):
+    """Normalize real gift/SC events; combo summaries do not count as extra gifts."""
+    kind = str(command.get('cmd', '')).split(':')[0]
+    data = command.get('data')
+    if not isinstance(data, dict):
+        return None
+    try:
+        if kind == 'SUPER_CHAT_MESSAGE_DELETE':
+            return {'kind': 'sc_delete', 'ids': [str(i) for i in data.get('ids') or []]}
+        if kind == 'SUPER_CHAT_MESSAGE':
+            user = data.get('user_info') or {}
+            base = (data.get('uinfo') or {}).get('base') or {}
+            medal = data.get('medal_info') or {}
+            sid = str(data['id'])
+            return {'kind': 'sc', 'id': sid, 'event_id': 'sc:' + sid, 'uid': str(data.get('uid', '')),
+                    'name': str(base.get('name') or user.get('uname') or (user.get('base') or {}).get('name') or '观众'),
+                    'text': str(data.get('message', '')), 'price': str(data.get('price', 0)),
+                    'medal': str(medal.get('medal_name', '')), 'level': str(medal.get('medal_level', ''))}
+        if kind in ('SEND_GIFT', 'GUARD_BUY'):
+            count = int(data.get('num', 0))
+            if count <= 0:
+                return None
+            name = data.get('uname') or data.get('username') or (data.get('uinfo') or {}).get('base', {}).get('name') or '观众'
+            gift = data.get('giftName') or data.get('gift_name') or '礼物'
+            # rnd can be shared by separate gifts in the same second/session.
+            transaction = str(data.get('tid') or '')
+            return {'kind': 'gift', 'name': str(name), 'uid': str(data.get('uid', '')),
+                    'text': f'赠送 {gift} × {count}', 'gift': str(gift), 'quantity': count,
+                    'event_id': f'gift:{data.get("uid", "")}:{transaction}' if transaction else ''}
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+    return None
+
+
 class ChatWorker(QThread):
     message = Signal(dict)
     status = Signal(str)
@@ -227,7 +261,7 @@ class ChatWorker(QThread):
 
         class Handler(blivedm.BaseHandler):
             def handle(self, client, command):
-                message = parse_chat(command)
+                message = parse_activity(command) or parse_chat(command)
                 if message:
                     owner.message.emit(message)
                 elif command.get('cmd') == '_HEARTBEAT':
