@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from studio.theme import stylesheet
 from studio.services import room_number, plain, safe_image, parse_chat, BiliAPI
 from studio.chat import message_html
-from studio.state import load_state, save_json
+from studio.state import load_state, save_json, load_credentials
 from studio.app import StudioWindow, SearchDialog
 from studio.player import PlayerTile
 
@@ -22,6 +22,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DataTests(unittest.TestCase):
+    def test_portable_mode_never_imports_neighboring_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            root = base / 'studio'
+            root.mkdir()
+            legacy = base / 'DD-Monitor/app/utils/config.json'
+            save_json(legacy, {'sessionData': 'test-only-neighbor'})
+            (root / 'portable-mode').touch()
+            self.assertEqual(load_credentials(root), {})
+            save_json(root / 'user-data/credentials.json', {'SESSDATA': 'test-only-own'})
+            self.assertEqual(load_credentials(root), {'SESSDATA': 'test-only-own'})
+
     def test_favorite_status_batches_preserve_unknown_rooms(self):
         api = BiliAPI()
         rooms = [{'id': str(i), 'uid': i, 'name': str(i), 'live': True} for i in range(1, 53)]

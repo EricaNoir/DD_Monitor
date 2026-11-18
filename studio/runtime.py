@@ -8,6 +8,12 @@ _isolated = False
 _tls_configured = False
 
 
+def vlc_directory(root):
+    root = Path(root)
+    portable = root / 'runtime' / 'vlc'
+    return portable if portable.is_dir() else root / 'runtime' / 'vlc-3.0.21'
+
+
 def isolate_process(root):
     """Keep host-app DLLs out of this app. Never change the user's system PATH."""
     global _isolated
@@ -19,7 +25,7 @@ def isolate_process(root):
     directories = [Path(sys.executable).parent, Path(sys.base_prefix),
                    Path(sys.base_prefix) / 'DLLs',
                    Path(sys.prefix) / 'Lib/site-packages/PySide6',
-                   root / 'runtime/vlc-3.0.21', windows / 'System32', windows]
+                   vlc_directory(root), windows / 'System32', windows]
     directories = list(dict.fromkeys(str(p) for p in directories if p.is_dir()))
     os.environ['PATH'] = os.pathsep.join(directories)
     for key in ('QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'OPENSSL_MODULES', 'OPENSSL_CONF'):
@@ -47,7 +53,7 @@ def configure_qt_tls():
 def configure_vlc(root):
     root = Path(root).resolve()
     isolate_process(root)
-    runtime = root / 'runtime' / 'vlc-3.0.21'
+    runtime = vlc_directory(root)
     if not (runtime / 'libvlc.dll').exists():
         raise RuntimeError('未找到完整 VLC 运行库，请先运行 setup-studio.ps1。')
     os.environ['VLC_PLUGIN_PATH'] = str(runtime / 'plugins')

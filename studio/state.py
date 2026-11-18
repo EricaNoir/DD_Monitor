@@ -26,6 +26,8 @@ def load_credentials(root):
     try:
         return json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
+        if (Path(root) / 'portable-mode').is_file():
+            return {}
         # Import only from the user's existing DD Monitor installation.
         legacy = Path(root).parent / 'DD-Monitor' / 'app' / 'utils' / 'config.json'
         try:

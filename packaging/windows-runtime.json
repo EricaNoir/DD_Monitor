@@ -1,0 +1,14 @@
+{
+  "python": {
+    "version": "3.13.17",
+    "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip",
+    "sha256": "9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38",
+    "digest_source": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip.sigstore"
+  },
+  "vlc": {
+    "version": "3.0.24",
+    "url": "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.7z",
+    "sha256": "1ed59c09152e78aff84663fa76efab26057716576db74332858810e5ef54ae1f",
+    "digest_source": "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.7z.sha256"
+  }
+}

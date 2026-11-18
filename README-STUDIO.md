@@ -6,6 +6,8 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 
 ## 使用
 
+不会使用 Git 的 Windows 用户可从 [Releases](https://github.com/EricaNoir/DD_Monitor/releases) 下载便携 ZIP，完整解压后双击「启动 DD Monitor.cmd」，不需要安装 Python 或 VLC。分享请用原始 ZIP 或 Release 链接，不要分享使用过后包含 `user-data` 的文件夹。便携包由干净的 GitHub runner 构建，附带校验值与构建来源证明；完整说明见 `packaging/README-PORTABLE.txt`。
+
 双击 `run-studio.cmd`。首次配置先运行 `setup-studio.ps1`，需要 Windows 64 位和 Python 3.10–3.13。
 
 - 顶部 **+** 添加直播间。窗口上方固定一排收藏头像，可横向滚动，开播的排前面；点击头像勾选播放，头像旁实心 / 空心星切换收藏。取消收藏立即保存并同步侧栏，但头像留在本次窗口里供恢复，关闭后再打开才从横排移除。收藏是本机列表，不会自动关注 / 取消关注 B 站账号。
