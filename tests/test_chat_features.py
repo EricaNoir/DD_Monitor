@@ -7,7 +7,7 @@ import requests
 from PySide6.QtWidgets import QApplication
 from studio.composer import ChatComposer
 from studio.services import BiliAPI, ChatWorker, parse_activity
-from studio.sc_overlay import sc_interval
+from studio.sc_overlay import sc_interval, display_interval
 
 COOKIES = {'SESSDATA': 'test-only', 'bili_jct': 'test-only'}
 NAV = {'isLogin': True, 'mid': 99, 'wbi_img': {'img_url': 'https://i0.hdslb.com/' + 'a'*32 + '.png',
@@ -71,6 +71,15 @@ class ChatSendTests(unittest.TestCase):
         with patch('studio.services.time.time', return_value=100):
             asyncio.run(worker.load_active_sc(session))
         self.assertEqual([m['id'] for m in result], ['1'])
+
+    def test_overlay_short_duration_respects_reading_floor_and_late_arrival(self):
+        message = {'start_time': 100, 'end_time': 400, 'text': '短留言'}
+        self.assertEqual(display_interval(message, 100), (100, 130))
+        self.assertEqual(display_interval(dict(message, end_time=160), 100), (100, 106))
+        self.assertEqual(display_interval(dict(message, end_time=160, text='字' * 100), 100), (100, 122))
+        self.assertEqual(display_interval(dict(message, end_time=160), 159), (159, 165))
+        self.assertEqual(display_interval(message, 90), (100, 130))
+        self.assertIsNone(display_interval(message, 400))
 
 
 class ComposerTests(unittest.TestCase):

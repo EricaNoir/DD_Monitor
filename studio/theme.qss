@@ -75,8 +75,6 @@ QPlainTextEdit { background: $panel; border: 1px solid $border; border-radius: $
 QFrame#SCOverlay { background: transparent; }
 QFrame#SCCard { background: $sc_overlay; border: 1px solid $sc_border; border-radius: ${size_bubble_radius}px; }
 QFrame#SCOverlay QLabel { background: transparent; color: $sc_text; border: 0; font-size: ${font_caption}px; }
-QFrame#SCOverlay QProgressBar { background: $sc_border; border: 0; border-radius: 1px; }
-QFrame#SCOverlay QProgressBar::chunk { background: $sc_progress; border-radius: 1px; }
 QScrollBar#FavoriteScroll:horizontal { background: transparent; border: 0; height: 4px; margin: 0; }
 QScrollBar#FavoriteScroll::handle:horizontal { background: $border_strong; border: 0; min-width: 24px; border-radius: 2px; }
 QScrollBar#FavoriteScroll::add-line:horizontal, QScrollBar#FavoriteScroll::sub-line:horizontal { width: 0; height: 0; border: 0; background: transparent; }

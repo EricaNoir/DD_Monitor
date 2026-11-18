@@ -26,7 +26,7 @@ SIZES = {
     'stepper_icon': 12, 'radius': 6, 'bubble_radius': 8, 'gap': 8,
     'rail': 42, 'tile_toolbar': 36, 'control_gap': 3,
     'bubble_padding': 8, 'message_gap': 8,
-    'sc_overlay_width': 260, 'sc_overlay_height': 80, 'sc_overlay_gap': 4,
+    'sc_overlay_width': 130, 'sc_overlay_height': 40, 'sc_overlay_gap': 4,
     'sc_overlay_inset': 8,
 }
 ICON_STROKE = 1.75

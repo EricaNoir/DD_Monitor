@@ -1,9 +1,10 @@
 """Owned, input-transparent window: stays above VLC's native video surface."""
 import math
 import time
-from .theme import SIZES
-from PySide6.QtCore import Qt, QTimer, QEvent, QPoint
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel, QProgressBar, QApplication
+from .theme import SIZES, FONTS
+from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRect
+from PySide6.QtGui import QFont, QFontMetrics
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel, QApplication
 
 
 def sc_interval(message):
@@ -20,6 +21,18 @@ def sc_interval(message):
         return (start, end) if 0 < start < end else None
     except (TypeError, ValueError):
         return None
+
+
+def display_interval(message, now):
+    interval = sc_interval(message)
+    if not interval or interval[1] <= now:
+        return None
+    start, end = interval
+    # Allow roughly five characters per second, plus time to notice the card.
+    characters = sum(not char.isspace() for char in str(message.get('text', '')))
+    reading_time = max(6, 2 + math.ceil(characters / 5))
+    visible_start = max(now, start)
+    return visible_start, visible_start + max((end - start) / 10, reading_time)
 
 
 class SCOverlay(QFrame):
@@ -64,7 +77,7 @@ class SCOverlay(QFrame):
     def add_message(self, message, now=None):
         now = time.time() if now is None else now
         sid = str(message.get('id') or '')
-        interval = sc_interval(message)
+        interval = display_interval(message, now)
         if not sid or not interval or interval[1] <= now or sid in self.active:
             return
         self.active[sid] = (dict(message), interval)
@@ -100,19 +113,30 @@ class SCOverlay(QFrame):
             return
         inset = SIZES['sc_overlay_inset']
         gap = SIZES['sc_overlay_gap']
-        card_height = SIZES['sc_overlay_height']
         width = min(SIZES['sc_overlay_width'], self.host.width() - 2 * inset)
-        capacity = min(3, max(0, (self.host.height() - 2 * inset - 20) // (card_height + gap)))
-        if width < 100 or not capacity:
+        if width < 100:
             self.hide()
             return
         current = [(sid, item) for sid, item in self.active.items() if item[1][0] <= now]
-        visible = current[-capacity:]
+        font = QFont(self.font())
+        font.setPixelSize(FONTS['caption'])
+        metrics = QFontMetrics(font)
+        heights = {sid: max(SIZES['sc_overlay_height'], metrics.height() + 12 +
+                           metrics.boundingRect(QRect(0, 0, width - 14, 10000), Qt.TextWordWrap,
+                                                str(item[0].get('text', ''))).height())
+                   for sid, item in current}
+        visible, used = [], 0
+        for entry in reversed(current[-3:]):
+            height = heights[entry[0]]
+            if used + height + gap > self.host.height() - 2 * inset - 20:
+                break
+            visible.insert(0, entry)
+            used += height + gap
         more = len(current) - len(visible)
         if not visible:
             self.hide()
             return
-        signature = (tuple(sid for sid, _ in visible), width, more)
+        signature = (tuple((sid, heights[sid]) for sid, _ in visible), width, more)
         if signature != self.signature:
             self.signature = signature
             while self.box.count():
@@ -125,36 +149,29 @@ class SCOverlay(QFrame):
             for sid, (message, interval) in visible:
                 card = QFrame()
                 card.setObjectName('SCCard')
-                card.setFixedHeight(card_height)
+                card.setFixedHeight(heights[sid])
                 layout = QVBoxLayout(card)
-                layout.setContentsMargins(8, 6, 8, 6)
-                layout.setSpacing(3)
+                layout.setContentsMargins(6, 4, 6, 4)
+                layout.setSpacing(2)
                 heading = QLabel()
+                heading.setFont(font)
                 heading.setTextFormat(Qt.PlainText)
+                title = f'SC ¥{message.get("price", "")} {message.get("name", "观众")}'
+                heading.setText(metrics.elidedText(title, Qt.ElideRight, width - 14))
                 layout.addWidget(heading)
                 body = QLabel(message.get('text', ''))
+                body.setFont(font)
+                body.setMinimumWidth(0)
                 body.setTextFormat(Qt.PlainText)
                 body.setWordWrap(True)
                 layout.addWidget(body, 1)
-                progress = QProgressBar()
-                progress.setRange(0, 1000)
-                progress.setTextVisible(False)
-                progress.setFixedHeight(2)
-                layout.addWidget(progress)
                 self.box.addWidget(card)
-                self.cards.append((sid, heading, progress))
+                self.cards.append((sid, heading))
             if more:
-                extra = QLabel(f'另有 {more} 条 SC · 在 SC 标签查看')
+                extra = QLabel(f'另有 {more} 条 SC')
                 extra.setFixedHeight(16)
                 self.box.addWidget(extra)
-            self.setFixedHeight(len(visible) * (card_height + gap) - gap + (16 + gap if more else 0))
-        for sid, heading, progress in self.cards:
-            message, (start, end) = self.active[sid]
-            seconds = max(0, math.ceil(end - now))
-            remaining = f'{seconds // 60}:{seconds % 60:02d}'
-            title = f'SC ¥{message.get("price", "")} · {message.get("name", "观众")} · {remaining}'
-            heading.setText(heading.fontMetrics().elidedText(title, Qt.ElideMiddle, width - 22))
-            progress.setValue(max(0, min(1000, int(1000 * (end - now) / (end - start)))))
+            self.setFixedHeight(used - gap + (16 + gap if more else 0))
         self.move(self.host.mapToGlobal(QPoint(inset, inset)))
         if not self.isVisible():
             self.show()

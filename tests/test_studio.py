@@ -398,7 +398,7 @@ class UITests(unittest.TestCase):
         self.window.save()
         self.assertEqual(load_state(self.path)['slot_settings']['0']['chat_filter'], 1)
 
-    def test_sc_overlay_uses_remaining_server_time_and_expires_independently(self):
+    def test_sc_overlay_is_compact_without_timer_and_expires_independently(self):
         import time
         now = time.time()
         tile = self.window.tiles[0]
@@ -411,9 +411,16 @@ class UITests(unittest.TestCase):
         overlay = tile.sc_overlay
         self.assertTrue(overlay.isVisible())
         self.assertNotIn('SC 浮层', tile.chat_view.toPlainText())
-        self.assertLessEqual(overlay.width(), 260)
-        self.assertEqual(overlay.height(), 80)
-        self.assertLessEqual(overlay.cards[0][2].value(), 167)
+        self.assertLessEqual(overlay.width(), 130)
+        self.assertGreaterEqual(overlay.height(), 40)
+        from PySide6.QtWidgets import QProgressBar, QLabel
+        self.assertFalse(overlay.findChildren(QProgressBar))
+        text = ' '.join(label.text() for label in overlay.findChildren(QLabel))
+        self.assertNotIn('·', text)
+        self.assertNotIn('0:', text)
+        end = overlay.active['timer'][1][1]
+        overlay.add_message(message, now + 1)
+        self.assertEqual(overlay.active['timer'][1][1], end)
         self.assertTrue(overlay.windowFlags() & Qt.WindowTransparentForInput)
         tile.chat_toggle.setChecked(False)
         overlay.sync(now + 1)
@@ -456,10 +463,10 @@ class UITests(unittest.TestCase):
         overlay.sync(now + 11)
         self.assertTrue(overlay.isVisible())
         self.window.hide()
-        overlay.sync(now + 20)
+        overlay.sync(now + 12)
         self.assertFalse(overlay.isVisible())
         self.assertTrue(overlay.active)
-        overlay.sync(now + 71)
+        overlay.sync(now + 17)
         self.window.show()
         self.app.processEvents()
         self.assertFalse(overlay.active)
