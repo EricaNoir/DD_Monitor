@@ -135,6 +135,7 @@ class StudioWindow(QMainWindow):
         self.resize(1760, 960)
         self.setMinimumSize(1050, 650)
         central = QWidget()
+        central.setProperty('appBackground', True)
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -172,6 +173,7 @@ class StudioWindow(QMainWindow):
         outer.addWidget(header_frame)
 
         self.video_area = QWidget()
+        self.video_area.setProperty('appBackground', True)
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
         self.video_grid.setSpacing(8)
@@ -211,6 +213,7 @@ class StudioWindow(QMainWindow):
             tile.toggle_chat(tile.chat_toggle.isChecked())
         self.chat_settings = self.build_chat_settings()
         self.content = QWidget()
+        self.content.setProperty('appBackground', True)
         content = QHBoxLayout(self.content)
         content.setContentsMargins(SIZES['gap'], SIZES['gap'], SIZES['gap'], SIZES['gap'])
         content.setSpacing(0)
@@ -218,6 +221,7 @@ class StudioWindow(QMainWindow):
         outer.addWidget(self.content, 1)
 
         self.global_controls = QFrame()
+        self.global_controls.setProperty('appBackground', True)
         self.global_controls.setFixedWidth(208)
         footer = QHBoxLayout(self.global_controls)
         footer.setContentsMargins(0, 0, 8, 0)
@@ -233,6 +237,7 @@ class StudioWindow(QMainWindow):
         self.balance_button.toggled.connect(self.toggle_audio_balance)
         footer.addWidget(self.balance_button)
         self.master_volume = QSlider(Qt.Horizontal)
+        self.master_volume.setProperty('appBackground', True)
         self.master_volume.setRange(0, 100)
         self.master_volume.setValue(self.state['volume'])
         self.master_volume.setFixedWidth(90)
@@ -313,11 +318,15 @@ class StudioWindow(QMainWindow):
 
     def build_library(self):
         frame = FavoritesScroll()
+        frame.setProperty('appBackground', True)
+        frame.viewport().setProperty('appBackground', True)
         self.rail_content = QWidget()
+        self.rail_content.setProperty('appBackground', True)
         box = QHBoxLayout(self.rail_content)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(0)
         self.room_list = RoomList(self.avatars)
+        self.room_list.viewport().setProperty('appBackground', True)
         self.room_list.scroll_area = frame
         self.room_list.remove_requested.connect(lambda room: self.set_favorite(room, False))
         self.room_list.reordered.connect(self.reorder_favorites)

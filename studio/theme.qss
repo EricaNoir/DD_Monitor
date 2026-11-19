@@ -1,7 +1,8 @@
 QWidget { background: $surface; color: $text; font-family: $font_family; font-size: ${font_body}px; }
 QMainWindow { background: $window; }
+QWidget[appBackground="true"] { background: $window; }
 QLabel { background: transparent; }
-QFrame#Header { background: $surface; border-bottom: 1px solid $border; }
+QFrame#Header { background: $window; border-bottom: 1px solid $border; }
 QLabel#Brand { color: $text; font-size: ${font_brand}px; font-weight: 600; padding-right: 16px; }
 QLabel#Muted, QLabel#Hint { color: $text_muted; }
 QLabel#Heading { font-size: ${font_heading}px; font-weight: 600; color: $text; }

@@ -3,7 +3,7 @@ from pathlib import Path
 from string import Template
 
 COLORS = {
-    'window': '#181818', 'surface': '#202020', 'chat_surface': '#232323',
+    'window': '#141414', 'surface': '#202020', 'chat_surface': '#232323',
     'field': '#292929', 'panel': '#272727', 'hover': '#333333',
     'selected': '#383838', 'pressed': '#414141', 'border': '#3b3b3b',
     'border_strong': '#505050', 'focus': '#888888',
