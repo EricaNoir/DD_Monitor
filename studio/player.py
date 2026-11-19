@@ -12,6 +12,7 @@ from .sc_overlay import SCOverlay
 from .services import BiliAPI, Job, ChatWorker
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox, StatusDot
+from .audio_balance import LevelController
 
 
 class RoomTitle(QPushButton):
@@ -80,6 +81,11 @@ class PlayerTile(QFrame):
         self._audio_muted = None
         self._audio_pending = False
         self.audio_balanced = False
+        self.owns_instance = False
+        self.level_controller = LevelController()
+        self._balance_gain = 0.0
+        self._balance_position = None
+        self._balance_progress = None
         self.request_pending = False
         self.request_started = 0.0
         self.retry_at = None
@@ -272,6 +278,9 @@ class PlayerTile(QFrame):
         self.audio_startup = QTimer(self)
         self.audio_startup.setInterval(50)
         self.audio_startup.timeout.connect(self.finish_audio_startup)
+        self.balance_timer = QTimer(self)
+        self.balance_timer.setInterval(250)
+        self.balance_timer.timeout.connect(self.balance_audio)
         self.apply_audio()
         self.update_toolbar()
 
@@ -369,6 +378,48 @@ class PlayerTile(QFrame):
                 self.media_time = None
                 self.healthy_since = None
         self.audio_balanced = enabled
+        self.reset_balance()
+        if enabled:
+            self.balance_timer.start()
+        else:
+            self.balance_timer.stop()
+            self.volume.setToolTip(f'音量 {self.volume.value()}%')
+
+    def reset_balance(self):
+        self.level_controller.reset()
+        self._balance_gain = 0.0
+        self._balance_position = None
+        self._balance_progress = None
+        if self.audio_balanced and self.player:
+            from .audio_balance import set_player_gain
+            set_player_gain(self.player, 0)
+
+    def balance_audio(self):
+        if not self.audio_balanced or not self.player or not self.room:
+            return
+        if self.paused or self.suspended or str(self.player.get_state()).split('.')[-1] != 'Playing':
+            self.level_controller.samples.clear()
+            self.level_controller.updated = None
+            return
+        now = time.monotonic()
+        position = self.player.get_time()
+        if position != self._balance_position:
+            self._balance_position, self._balance_progress = position, now
+        elif self._balance_progress is None or now - self._balance_progress > 1:
+            self.level_controller.samples.clear()
+            self.level_controller.updated = None
+            return
+        from .audio_balance import read_player_peak, set_player_gain
+        try:
+            gain = self.level_controller.update(read_player_peak(self.player), now)
+            if abs(gain - self._balance_gain) >= .1 and set_player_gain(self.player, gain):
+                self._balance_gain = gain
+            self.level_controller.gain_db = self._balance_gain
+            self.volume.setToolTip(f'手动音量 {self.volume.value()}%\n动态平衡补偿 {self._balance_gain:+.1f} dB')
+        except (OSError, AttributeError, KeyError, RuntimeError):
+            self.balance_timer.stop()
+            import logging
+            logging.exception('Dynamic level measurement unavailable')
 
     def finish_audio_startup(self):
         if not self.player or not self._audio_pending:
@@ -474,6 +525,7 @@ class PlayerTile(QFrame):
         media.add_option(':http-user-agent=Mozilla/5.0')
         media.add_option(':http-referrer=https://live.bilibili.com/')
         self.player.set_media(media)
+        self.reset_balance()
         self._audio_volume = self._audio_muted = None
         self.apply_audio(force=True)
         self.player.play()
@@ -632,6 +684,7 @@ class PlayerTile(QFrame):
         worker.deleteLater()
 
     def clear(self, emit=True):
+        self.reset_balance()
         self.audio_startup.stop()
         self.generation += 1
         self.request_pending = False
@@ -667,6 +720,7 @@ class PlayerTile(QFrame):
             self.changed.emit()
 
     def shutdown(self):
+        self.balance_timer.stop()
         self.monitor.stop()
         self.sc_overlay.shutdown()
         self.clear(emit=False)
@@ -675,6 +729,9 @@ class PlayerTile(QFrame):
         if self.player:
             self.player.release()
             self.player = None
+        if self.owns_instance and self.instance:
+            self.instance.release()
+            self.instance = None
 
     def start_tile_drag(self):
         drag = QDrag(self)

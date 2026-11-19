@@ -105,6 +105,9 @@ class UITests(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        native_gain = patch('studio.audio_balance.set_player_gain', return_value=True)
+        native_gain.start()
+        self.addCleanup(native_gain.stop)
         self.path = Path(self.temp.name) / 'studio.json'
         self.window = StudioWindow(ROOT, demo=True, state_path=self.path)
         self.window.show()
@@ -137,6 +140,37 @@ class UITests(unittest.TestCase):
         self.assertEqual(dialog.follow_filter.height(), 32)
         self.assertEqual(dialog.input.height(), dialog.search_button.height())
         dialog.close()
+
+    def test_window_geometry_restores_position_size_and_maximized_state(self):
+        w = self.window
+        w.resize(1230, 740)
+        w.move(110, 80)
+        self.app.processEvents()
+        w.demo = False
+        w.save()
+        again = StudioWindow(ROOT, demo=True, state_path=self.path)
+        again.show()
+        self.app.processEvents()
+        try:
+            available = w.screen().availableGeometry()
+            self.assertEqual(again.height(), w.height())
+            self.assertGreaterEqual(again.width(), w.minimumWidth())
+            self.assertLessEqual(again.width(), w.width())
+            self.assertTrue(available.intersects(again.frameGeometry()))
+            if available.contains(w.frameGeometry()):
+                self.assertEqual(again.size(), w.size())
+                self.assertLessEqual((again.pos() - w.pos()).manhattanLength(), 4)
+            w.showMaximized()
+            self.app.processEvents()
+            w.save()
+            maximized = StudioWindow(ROOT, demo=True, state_path=self.path)
+            try:
+                self.assertTrue(maximized.isMaximized())
+            finally:
+                maximized.close()
+        finally:
+            w.demo = True
+            again.close()
 
     def test_account_status_ignores_stale_results(self):
         w = self.window

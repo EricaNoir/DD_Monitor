@@ -3,7 +3,7 @@ import io
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal, QSize, QPoint
+from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal, QSize, QPoint, QByteArray
 from PySide6.QtGui import QFont, QKeySequence, QPixmap, QShortcut, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
@@ -175,7 +175,17 @@ class StudioWindow(QMainWindow):
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
         self.video_grid.setSpacing(8)
-        self.tiles = [PlayerTile(index, instance, self.cookies, self) for index in range(9)]
+        self.tiles = []
+        for index in range(9):
+            tile_instance = instance
+            if instance and index:
+                from .runtime import create_vlc_instance
+                tile_instance = create_vlc_instance(*('--vout=dummy', '--aout=dummy') if demo else ())
+                if not tile_instance:
+                    raise RuntimeError('无法创建独立音频播放器')
+            tile = PlayerTile(index, tile_instance, self.cookies, self)
+            tile.owns_instance = bool(instance and index)
+            self.tiles.append(tile)
         for tile in self.tiles:
             tile.selected.connect(self.select_tile)
             tile.swap_requested.connect(self.swap_tiles)
@@ -218,7 +228,7 @@ class StudioWindow(QMainWindow):
         self.mute_all = decorate(button('', self.toggle_all_mute, checkable=True), 'volume', '全部静音', 32)
         footer.addWidget(self.mute_all)
         self.balance_button = decorate(button('', checkable=True), 'balance',
-            '音量平衡：降低过响、适度提升较轻的声音；切换时画面会短暂重连', 32)
+            '动态音量平衡：持续分析最近 3 秒电平，缓慢拉齐各直播间；切换时画面会短暂重连', 32)
         self.balance_button.setChecked(bool(self.state.get('audio_balance', True)))
         self.balance_button.toggled.connect(self.toggle_audio_balance)
         footer.addWidget(self.balance_button)
@@ -246,6 +256,9 @@ class StudioWindow(QMainWindow):
             self.shortcuts.append(shortcut)
         self.refresh_library()
         self.arrange()
+        geometry = self.state.get('window_geometry')
+        if isinstance(geometry, str) and len(geometry) < 4096:
+            self.restoreGeometry(QByteArray.fromBase64(geometry.encode('ascii', errors='ignore')))
         self.ready = True
         self.select_tile(0)
         self.favorite_poll_pending = False
@@ -784,6 +797,7 @@ class StudioWindow(QMainWindow):
                           'chat_names': self.show_names.isChecked(),
                           'volume': self.master_volume.value(),
                           'audio_balance': self.balance_button.isChecked(),
+                          'window_geometry': bytes(self.saveGeometry().toBase64()).decode('ascii'),
                           'slot_settings': {str(tile.index): {'volume': tile.volume.value(), 'muted': tile.muted,
                                             'quality': tile.quality.currentData(),
                                             'chat_visible': tile.chat_toggle.isChecked(),

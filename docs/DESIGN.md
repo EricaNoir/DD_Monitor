@@ -35,12 +35,23 @@ through `studio.theme.stylesheet()`, including in preview and test scripts.
 - The editable app icon is `assets/studio-icon.svg`; `scripts/build_icon.py`
   exports PNG and the 16–256 px Windows ICO. `scripts/build_launcher.py` embeds
   it in the native launcher; window and shortcut AppIDs match for taskbar pins.
-- The global loudness-balance toggle enables VLC's compressor per player.
+- Dynamic balance uses one VLC instance per tile because native bargraph
+  measurements are instance-scoped. Meter source buffer peaks before gain;
+  energy-average their samples over 3 seconds and adjust flat preamp at 4 Hz
+  toward a common -24 dBFS level (not LUFS). Ignore below -48 dBFS, warm up for
+  2 seconds, cap correction at -24/+6 dB, slew down/up at 6/2 dB per second,
+  and reset on room changes/reconnects. Silence for 3 seconds starts a slow
+  return to zero correction. A downstream fast compressor catches peaks.
+  VLC's flat equalizer input factor of 0.25 is explicitly compensated; all
+  frequency bands remain at zero. Manual volume stays downstream and unchanged.
   `audio_balance.py` bridges the bundled VLC 3 typed variable API because the
   LibVLC media-player filter variable does not inherit CLI/media filter options.
-  Native sample capture tests validate actual gain and reversible disabling;
+  Native sample capture tests validate independent sources swapping loudness,
+  measured convergence, peak protection and reversible disabling;
   existing silence-based startup tests cover pause, mute and volume safety.
   Unsupported runtimes fall back to original audio, not a startup failure.
+- Save Qt window geometry with layout settings and restore before showing the
+  main window; let Qt handle maximized state and changed monitor geometry.
 - Live SC without usable timestamps still receives minimum reading time;
   expired restored history is rejected. An oversized card fits the tile with
   an ellipsis and remains complete in chat. Owned native windows remain above

@@ -48,7 +48,8 @@ with tempfile.TemporaryDirectory() as temp:
             probe.release()
 
         for index, (volume, muted) in enumerate(((17, False), (42, True), (0, False))):
-            tile = PlayerTile(index, instance, {})
+            tile = PlayerTile(index, create_vlc_instance('--no-video'), {})
+            tile.owns_instance = True
             tile.monitor.stop()  # Verify the startup timer, not the 1s fallback.
             tile.volume.setValue(volume)
             tile.set_muted(muted)

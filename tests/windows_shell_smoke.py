@@ -79,6 +79,18 @@ with tempfile.TemporaryDirectory() as folder:
     for tile in window.tiles[:4]:
         tile.sc_overlay.sync()
         assert tile.sc_overlay.isVisible()
+    window.move(70, 65)
+    app.processEvents()
+    window.demo = False
+    window.save()
+    window.demo = True
+    expected_size, expected_position = window.size(), window.pos()
+    restored = StudioWindow(ROOT, demo=True, state_path=Path(folder) / 'state.json')
+    restored.show()
+    app.processEvents()
+    assert restored.size() == expected_size
+    assert (restored.pos() - expected_position).manhattanLength() <= 4
+    restored.close()
     window.close()
     app.processEvents()
-print('PASS: native AppID/relaunch properties, four owned SC windows, resize/surface recreation/minimize/restore')
+print('PASS: native AppID/relaunch properties, four owned SC windows, resize/surface recreation/minimize/restore, saved window position and size')
