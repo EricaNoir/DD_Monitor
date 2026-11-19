@@ -13,6 +13,7 @@ from .services import BiliAPI, Job, ChatWorker
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox, StatusDot
 from .audio_balance import LevelController
+from .room_metrics import elapsed_text
 
 
 class RoomTitle(QPushButton):
@@ -67,6 +68,8 @@ class PlayerTile(QFrame):
         super().__init__(parent)
         self.index, self.instance, self.cookies = index, instance, cookies
         self.room = None
+        self.audience = None
+        self.audience_at = 0.0
         self.generation = 0
         self.chat_worker = None
         self.retiring = []
@@ -267,8 +270,16 @@ class PlayerTile(QFrame):
         self.more_menu.addAction(volume_action)
         self.solo_action = self.more_menu.addAction('只听这个直播间', lambda: self.solo_requested.emit(self.index))
         self.retry_action = self.more_menu.addAction('重新连接', lambda: self.reload(reconnect_chat=True))
+        self.focus_action = self.more_menu.addAction('聚焦此画面 / 返回多屏', lambda: self.focus_requested.emit(self.index))
+        self.gift_action = self.more_menu.addAction('送礼物 / 发 SC', lambda: self.gift_requested.emit(self.index))
         self.more.setMenu(self.more_menu)
         header.insertWidget(header.indexOf(self.chat_toggle), self.more)
+        self.metrics = QLabel()
+        self.metrics.setObjectName('RoomMetrics')
+        self.metrics.setTextFormat(Qt.PlainText)
+        self.metrics.setAlignment(Qt.AlignVCenter)
+        self.metrics.hide()
+        header.insertWidget(1, self.metrics)
         self.status = QLabel(self)
         self.status.hide()
         self.set_status('等待添加 · 支持拖入主播')
@@ -291,9 +302,50 @@ class PlayerTile(QFrame):
 
     def update_toolbar(self):
         compact = self.width() < 640
+        narrow = self.width() < 520
         for widget in (self.volume, self.solo, self.retry):
             widget.setVisible(not compact)
         self.more.setVisible(compact)
+        self.focus_button.setVisible(not narrow)
+        self.gift_button.setVisible(not narrow)
+        self.focus_action.setVisible(narrow)
+        self.gift_action.setVisible(narrow)
+        if hasattr(self, 'metrics'):
+            self.update_metrics()
+
+    def update_metrics(self):
+        self.gift_action.setEnabled(bool(self.room))
+        self.metrics.setVisible(bool(self.room))
+        if not self.room:
+            return
+        if self.room.get('live') is False:
+            self.audience = None
+            self.metrics.setText('未开播')
+            self.metrics.setToolTip('主播当前未开播')
+            return
+        duration = elapsed_text(self.room.get('live_start'), time.time(), self.width() < 640)
+        fresh = self.audience is not None and time.monotonic() - self.audience_at < 120
+        people = self.audience['text'] if fresh else '—'
+        self.metrics.setText(f'{duration}  在线 {people}')
+        full_duration = elapsed_text(self.room.get('live_start'), time.time())
+        self.metrics.setToolTip(f'本场直播时长：{full_duration}\n在线人数：{people}\n'
+                               '时长从主播实际开播时间计算；在线人数由 B 站实时推送，平台数值可能有上限。\n'
+                               '未收到或超过两分钟未更新时，人数显示 —。')
+
+    def update_room_status(self, status):
+        if not self.room or status.get('id') != self.room['id']:
+            return
+        if (status.get('live') is False or
+                status.get('live_start') != self.room.get('live_start')):
+            self.audience = None
+        self.room.update(status)
+        self.update_title()
+
+    def receive_audience(self, worker, audience):
+        if worker is self.chat_worker and self.room and self.room.get('live') is not False:
+            self.audience = audience
+            self.audience_at = time.monotonic()
+            self.update_metrics()
 
     def set_status(self, text):
         self.status.setText(text)
@@ -462,6 +514,7 @@ class PlayerTile(QFrame):
         self.changed.emit()
 
     def update_title(self):
+        self.update_metrics()
         if self.room:
             title = f'{self.index + 1:02d}   {self.room["name"]}'
             if self.room.get('title'):
@@ -505,6 +558,9 @@ class PlayerTile(QFrame):
         if ticket != self.generation or not self.room:
             return
         self.request_pending = False
+        if (result['room'].get('live') is False or
+                result['room'].get('live_start') != self.room.get('live_start')):
+            self.audience = None
         self.room = result['room']
         self.room_resolved.emit(self.room)
         self.update_title()
@@ -557,6 +613,7 @@ class PlayerTile(QFrame):
         self.empty_hint.setText(text)
 
     def monitor_playback(self):
+        self.update_metrics()
         if not self.player or not self.room:
             return
         now = time.monotonic()
@@ -605,11 +662,14 @@ class PlayerTile(QFrame):
 
     def start_chat(self):
         self.retire_chat()
+        self.audience = None
+        self.update_metrics()
         if self.room:
             worker = ChatWorker(self.room['id'], self.cookies, self)
             self.chat_worker = worker
             worker.message.connect(lambda msg: self.receive_chat(worker, msg))
             worker.status.connect(lambda text: self.set_chat_status(worker, text))
+            worker.audience.connect(lambda audience: self.receive_audience(worker, audience))
             worker.start()
 
     def receive_chat(self, worker, message):
@@ -706,6 +766,8 @@ class PlayerTile(QFrame):
         self.deleted_sc.clear()
         self.chat_view.clear()
         self.room = None
+        self.audience = None
+        self.update_metrics()
         self.gift_button.setEnabled(False)
         self.paused = False
         decorate(self.play_button, 'pause', '暂停直播')

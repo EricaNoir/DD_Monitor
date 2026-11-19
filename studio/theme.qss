@@ -83,3 +83,4 @@ QScrollBar#FavoriteScroll::handle:horizontal { background: $border_strong; borde
 QScrollBar#FavoriteScroll::add-line:horizontal, QScrollBar#FavoriteScroll::sub-line:horizontal { width: 0; height: 0; border: 0; background: transparent; }
 QScrollBar#FavoriteScroll::add-page:horizontal, QScrollBar#FavoriteScroll::sub-page:horizontal { background: transparent; border: 0; }
 QScrollBar#FavoriteScroll::left-arrow:horizontal, QScrollBar#FavoriteScroll::right-arrow:horizontal { width: 0; height: 0; border: 0; }
+QLabel#RoomMetrics { color: $text_muted; font-size: ${font_caption}px; padding: 0 4px; }

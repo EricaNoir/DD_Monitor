@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import requests
 from .gift_proto import decode_gift
+from .room_metrics import live_start, audience_update
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal, Slot
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
@@ -130,7 +131,8 @@ class BiliAPI:
                           roomid=info['room_id']).get('info', {})
         return {'id': str(info['room_id']), 'name': anchor.get('uname') or f"房间 {rid}",
                 'title': info.get('title', ''), 'live': info.get('live_status') == 1,
-                'uid': info.get('uid', 0), 'face': safe_image(anchor.get('face', ''))}
+                'uid': info.get('uid', 0), 'face': safe_image(anchor.get('face', '')),
+                'live_start': live_start(info.get('live_time'))}
 
     def search_with_follow(self, query, page=1):
         result = self.search(query, page)
@@ -216,6 +218,7 @@ class BiliAPI:
                 if not info or 'live_status' not in info:
                     continue
                 updated.append(dict(room, live=info['live_status'] == 1,
+                                    live_start=live_start(info.get('live_time')),
                                     title=plain(info.get('title', room.get('title', ''))),
                                     name=plain(info.get('uname') or room['name']),
                                     face=safe_image(info.get('face')) or room.get('face', '')))
@@ -371,6 +374,7 @@ def parse_messages(command):
 class ChatWorker(QThread):
     message = Signal(dict)
     status = Signal(str)
+    audience = Signal(dict)
 
     def __init__(self, rid, cookies, parent=None):
         super().__init__(parent)
@@ -421,6 +425,9 @@ class ChatWorker(QThread):
 
         class Handler(blivedm.BaseHandler):
             def handle(self, client, command):
+                audience = audience_update(command)
+                if audience is not None:
+                    owner.audience.emit(audience)
                 for message in parse_messages(command):
                     owner.message.emit(message)
                 if command.get('cmd') == '_HEARTBEAT':

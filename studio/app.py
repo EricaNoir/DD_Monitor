@@ -699,18 +699,23 @@ class StudioWindow(QMainWindow):
             self.account.setToolTip(error + '\n点击扫码登录')
 
     def refresh_favorite_status(self):
-        if self.demo or self.closing or self.favorite_poll_pending or not self.favorites:
+        if self.demo or self.closing or self.favorite_poll_pending:
             return
         monitored = set(self.favorites)
         monitored.update(tile.room['id'] for tile in self.tiles[:self.count] if tile.room)
         rooms = [dict(room) for rid, room in self.rooms.items() if rid in monitored]
+        if not rooms:
+            return
         self.favorite_poll_pending = True
         self.refresh_live_button.setEnabled(False)
         self.refresh_live_button.setToolTip('正在刷新开播状态…')
         api = BiliAPI(self.cookies)
         job = Job(lambda: api.room_statuses(rooms))
+        job.signals.setParent(self)
         job.signals.done.connect(self.favorite_status_ready)
         job.signals.error.connect(self.favorite_status_failed)
+        job.signals.done.connect(job.signals.deleteLater)
+        job.signals.error.connect(job.signals.deleteLater)
         QThreadPool.globalInstance().start(job)
 
     def favorite_status_failed(self, error):
@@ -729,6 +734,10 @@ class StudioWindow(QMainWindow):
             if room['id'] in self.rooms and (room['id'] in self.favorites or room['id'] in visible_ids):
                 self.rooms[room['id']] = dict(self.rooms[room['id']], **room)
         self.fill_live_favorites({room['id']: room for room in rooms})
+        by_id = {room['id']: room for room in rooms}
+        for tile in self.tiles[:self.count]:
+            if tile.room and tile.room['id'] in by_id:
+                tile.update_room_status(by_id[tile.room['id']])
         self.refresh_library()
         for dialog in self.dialogs:
             if isinstance(dialog, SearchDialog) and dialog.isVisible():

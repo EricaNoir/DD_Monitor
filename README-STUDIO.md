@@ -6,6 +6,8 @@ DD Monitor 的交互改版。Windows 原生多屏播放器，增加昵称搜索�
 
 ## 使用
 
+每个直播窗口顶部显示本场直播时长与在线人数。时长依据主播的实际开播时间，每秒更新，暂停视频不会暂停计时；窄窗口精简为时、分。在线人数使用 B 站消息推送中的 `ONLINE_RANK_COUNT.online_count` / `online_count_text`，保留平台的上限提示，不用人气、累计看过人数或高能榜人数代替。尚未收到或超过两分钟未更新时显示「—」，下播后清除本场数据。开播时间与状态复用每 30 秒批量刷新。
+
 不会使用 Git 的 Windows 用户可从 [Releases](https://github.com/EricaNoir/DD_Monitor/releases) 下载便携 ZIP，完整解压后双击「启动 DD Monitor.cmd」，不需要安装 Python 或 VLC。分享请用原始 ZIP 或 Release 链接，不要分享使用过后包含 `user-data` 的文件夹。便携包由干净的 GitHub runner 构建，附带校验值与构建来源证明；完整说明见 `packaging/README-PORTABLE.txt`。
 
 双击 `DD Monitor Studio.exe`（或 `run-studio.cmd`）。首次配置先运行 `setup-studio.ps1`，需要 Windows 64 位和 Python 3.10–3.13。新版使用独立图标启动器与统一 Windows AppID；旧的 Python 任务栏固定项请取消后，从新版窗口重新固定一次。
