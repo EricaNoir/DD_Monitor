@@ -124,7 +124,8 @@ class UITests(unittest.TestCase):
         self.assertEqual(w.library_add.width(), 42)
         self.assertEqual(w.library_add.height(), 42)
         self.assertEqual(w.library_add.x(), w.room_list.width())
-        self.assertEqual(w.refresh_live_button.height(), 32)
+        self.assertEqual(w.refresh_live_button.height(), 42)
+        self.assertEqual(w.refresh_live_button.x(), w.library_add.x() + w.library_add.width())
         tile = w.tiles[0]
         self.assertEqual(tile.quality.height(), 28)
         self.assertEqual(tile.play_button.height(), 28)

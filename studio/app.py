@@ -152,7 +152,6 @@ class StudioWindow(QMainWindow):
         header.addWidget(self.account)
         self.library = self.build_library()
         header.addWidget(self.library, 1)
-        header.addWidget(self.refresh_live_button)
         self.layout_choice = QComboBox()
         for value, title in [(1, '单画面'), (2, '双画面'), (4, '四宫格'), (6, '六宫格'), (9, '九宫格')]:
             self.layout_choice.addItem(title, value)
@@ -312,9 +311,11 @@ class StudioWindow(QMainWindow):
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list)
-        self.refresh_live_button = decorate(button('', self.refresh_all), 'reload', '刷新开播状态并重连所有画面', 32)
+        self.refresh_live_button = button('', self.refresh_all)
         self.library_add = button('', lambda: self.open_search(self.active))
-        for widget, glyph, description in ((self.library_add, 'add', '添加直播间  Ctrl+K'),):
+        for widget, glyph, description in (
+                (self.library_add, 'add', '添加直播间  Ctrl+K'),
+                (self.refresh_live_button, 'reload', '刷新开播状态并重连所有画面')):
             # Rail actions fill the rail, unlike compact toolbar icon buttons.
             widget.setProperty('railAction', True)
             widget.setFixedSize(SIZES['rail'], SIZES['rail_action'])
@@ -384,7 +385,7 @@ class StudioWindow(QMainWindow):
                 self.room_list.setCurrentItem(item)
         self.sync_sidebar_visible()
         self.room_list.setFixedWidth(self.room_list.count() * SIZES['rail'])
-        self.rail_content.setFixedSize((self.room_list.count() + 1) * SIZES['rail'], SIZES['rail'])
+        self.rail_content.setFixedSize((self.room_list.count() + 2) * SIZES['rail'], SIZES['rail'])
         self.refresh_live_button.setEnabled(not getattr(self, 'favorite_poll_pending', False))
 
     def reorder_favorites(self, room_ids):

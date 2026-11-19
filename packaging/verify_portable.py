@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory() as temp:
     app.processEvents()
     assert window.library.height() == 42
     assert window.library_add.width() == 42
-    assert window.refresh_live_button.width() == 32
+    assert window.refresh_live_button.width() == 42
     assert (ROOT / 'DD Monitor Studio.exe').is_file()
     assert not window.cookies
     window.close()
