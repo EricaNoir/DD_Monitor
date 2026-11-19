@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ['studio', 'blivedm', 'favicon.ico', 'LICENSE', 'README-STUDIO.md',
-             'studio_main.py', 'packaging']
+             'studio_main.py', 'packaging', 'assets', 'scripts/build_launcher.py', 'tests/audio_balance_smoke.py']
 PRIVATE = {'user-data', '.git', '.venv', '.qa', '__pycache__', 'credentials.json', 'studio.json'}
 
 
@@ -93,7 +93,8 @@ def main():
                     raise RuntimeError('Cache path escaped the build directory')
                 path.unlink()
         (package / 'portable-mode').write_text('Do not import accounts from neighboring installations.\n', encoding='utf-8')
-        launcher = '@echo off\r\ncd /d "%~dp0"\r\nstart "DD Monitor Studio" "%~dp0python\\pythonw.exe" -I -B "%~dp0studio_main.py"\r\n'
+        run(sys.executable, package / 'scripts/build_launcher.py')
+        launcher = '@echo off\r\ncd /d "%~dp0"\r\nstart "DD Monitor Studio" "%~dp0DD Monitor Studio.exe"\r\n'
         (package / '启动 DD Monitor.cmd').write_bytes(launcher.encode('ascii'))
         diagnostic = '@echo off\r\ncd /d "%~dp0"\r\n"%~dp0python\\python.exe" -I -B "%~dp0studio_main.py"\r\npause\r\n'
         (package / '诊断启动.cmd').write_bytes(diagnostic.encode('ascii'))

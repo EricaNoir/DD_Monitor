@@ -79,6 +79,7 @@ class PlayerTile(QFrame):
         self._audio_volume = None
         self._audio_muted = None
         self._audio_pending = False
+        self.audio_balanced = False
         self.request_pending = False
         self.request_started = 0.0
         self.retry_at = None
@@ -332,7 +333,7 @@ class PlayerTile(QFrame):
     def apply_audio(self, force=False):
         if self.player:
             volume = self.volume.value()
-            muted = self.muted or self.suspended
+            muted = self.muted or self.suspended or self.paused
             if force or self._audio_volume != volume:
                 if self.player.audio_set_volume(volume) == 0:
                     self._audio_volume = volume
@@ -347,11 +348,35 @@ class PlayerTile(QFrame):
             return True
         return False
 
+    def set_audio_balance(self, enabled):
+        enabled = bool(enabled)
+        if enabled == self.audio_balanced:
+            return
+        if self.player:
+            from .audio_balance import set_player_balance
+            set_player_balance(self.player, enabled)
+            # Existing outputs snapshot their filter chain. Reopen the same
+            # media to apply it, retaining chat, volume, mute, pause and solo.
+            state = str(self.player.get_state()).split('.')[-1]
+            if state in ('Playing', 'Paused', 'Opening', 'Buffering'):
+                self.player.audio_set_mute(True)
+                self.player.stop()
+                self._audio_volume = self._audio_muted = None
+                self.player.play()
+                self._audio_pending = True
+                self.audio_startup.start()
+                self.progress_at = time.monotonic()
+                self.media_time = None
+                self.healthy_since = None
+        self.audio_balanced = enabled
+
     def finish_audio_startup(self):
         if not self.player or not self._audio_pending:
             self.audio_startup.stop()
             return
         state = str(self.player.get_state()).split('.')[-1]
+        if state == 'Playing' and (self.paused or self.suspended):
+            self.player.set_pause(True)
         if state in ('Playing', 'Paused') and self.apply_audio(force=True):
             self._audio_pending = False
             self.audio_startup.stop()
@@ -365,6 +390,7 @@ class PlayerTile(QFrame):
         decorate(self.play_button, 'play' if self.paused else 'pause', '继续播放' if self.paused else '暂停直播')
         if self.player:
             self.player.set_pause(self.paused or self.suspended)
+            self.apply_audio()
 
     def suspend(self, hidden):
         self.suspended = hidden

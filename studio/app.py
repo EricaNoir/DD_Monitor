@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QVBox
     QAbstractItemView, QDialog, QSplitter, QCheckBox, QSlider, QMessageBox)
 from .services import BiliAPI, Job
 from .player import PlayerTile
-from .sidebar import RoomList, AvatarStore
+from .sidebar import RoomList, AvatarStore, FavoritesScroll
 from .search_dialog import SearchDialog
 from .icons import decorate, icon
 from .widgets import BelowComboBox as QComboBox, StudioSpinBox as QSpinBox
@@ -142,7 +142,7 @@ class StudioWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setObjectName('Header')
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(5, SIZES['gap'], 12, SIZES['gap'])
+        header.setContentsMargins(8, 4, 8, 4)
         header.setSpacing(SIZES['gap'])
         self.account_ticket = 0
         self.account = button('正在检查登录…' if self.cookies.get('SESSDATA') else '未登录 · 点击登录', self.login)
@@ -150,7 +150,9 @@ class StudioWindow(QMainWindow):
         self.account.setIconSize(QSize(SIZES['icon'], SIZES['icon']))
         self.account.setToolTip('查看当前登录状态，点击扫码登录或切换账号')
         header.addWidget(self.account)
-        header.addStretch()
+        self.library = self.build_library()
+        header.addWidget(self.library, 1)
+        header.addWidget(self.refresh_live_button)
         self.layout_choice = QComboBox()
         for value, title in [(1, '单画面'), (2, '双画面'), (4, '四宫格'), (6, '六宫格'), (9, '九宫格')]:
             self.layout_choice.addItem(title, value)
@@ -165,13 +167,11 @@ class StudioWindow(QMainWindow):
             header.addWidget(widget)
         self.settings_button = decorate(button('', lambda: self.chat_settings.show()), 'settings', '弹幕设置', 32)
         header.addWidget(self.settings_button)
-        self.add = decorate(button('', lambda: self.open_search(self.active)), 'add', '添加直播间  Ctrl+K', 32)
-        header.addWidget(self.add)
+        self.add = self.library_add
         self.info_button = decorate(button('', self.show_help), 'info', '操作指引与快捷键', 32)
         header.addWidget(self.info_button)
         outer.addWidget(header_frame)
 
-        self.library = self.build_library()
         self.video_area = QWidget()
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
@@ -186,6 +186,12 @@ class StudioWindow(QMainWindow):
             tile.solo_requested.connect(self.solo_tile)
             tile.room_resolved.connect(self.update_room)
             tile.changed.connect(self.tile_changed)
+            try:
+                tile.set_audio_balance(bool(self.state.get('audio_balance', False)))
+            except (OSError, AttributeError, KeyError, RuntimeError):
+                import logging
+                logging.exception('Audio balance unavailable; continuing with original audio')
+                self.state['audio_balance'] = False
             saved = self.state['slot_settings'].get(str(tile.index), {})
             tile.volume.setValue(saved.get('volume', self.state['volume']))
             tile.set_muted(saved.get('muted', tile.index != 0))
@@ -197,14 +203,13 @@ class StudioWindow(QMainWindow):
         self.chat_settings = self.build_chat_settings()
         self.content = QWidget()
         content = QHBoxLayout(self.content)
-        content.setContentsMargins(0, SIZES['gap'], SIZES['gap'], SIZES['gap'])
+        content.setContentsMargins(SIZES['gap'], SIZES['gap'], SIZES['gap'], SIZES['gap'])
         content.setSpacing(0)
-        content.addWidget(self.library)
         content.addWidget(self.video_area, 1)
         outer.addWidget(self.content, 1)
 
         self.global_controls = QFrame()
-        self.global_controls.setFixedWidth(208)
+        self.global_controls.setFixedWidth(243)
         footer = QHBoxLayout(self.global_controls)
         footer.setContentsMargins(0, 0, 8, 0)
         footer.setSpacing(3)
@@ -214,6 +219,11 @@ class StudioWindow(QMainWindow):
         footer.addWidget(self.reload_button)
         self.mute_all = decorate(button('', self.toggle_all_mute, checkable=True), 'volume', '全部静音', 32)
         footer.addWidget(self.mute_all)
+        self.balance_button = decorate(button('', checkable=True), 'balance',
+            '音量平衡：降低过响、适度提升较轻的声音；切换时画面会短暂重连', 32)
+        self.balance_button.setChecked(bool(self.state.get('audio_balance', False)))
+        self.balance_button.toggled.connect(self.toggle_audio_balance)
+        footer.addWidget(self.balance_button)
         self.master_volume = QSlider(Qt.Horizontal)
         self.master_volume.setRange(0, 100)
         self.master_volume.setValue(self.state['volume'])
@@ -269,6 +279,21 @@ class StudioWindow(QMainWindow):
         box.addWidget(self.notice)
         return dialog
 
+    def toggle_audio_balance(self, enabled):
+        try:
+            for tile in self.tiles:
+                tile.set_audio_balance(enabled)
+        except (OSError, AttributeError, KeyError, RuntimeError) as error:
+            for tile in self.tiles:
+                if tile.audio_balanced == enabled:
+                    tile.set_audio_balance(not enabled)
+            self.balance_button.blockSignals(True)
+            self.balance_button.setChecked(not enabled)
+            self.balance_button.blockSignals(False)
+            QMessageBox.warning(self, '音量平衡不可用', str(error))
+            return
+        self.save()
+
     def show_help(self):
         self.help_dialog.adjustSize()
         point = self.info_button.mapToGlobal(QPoint(self.info_button.width(), self.info_button.height() + 5))
@@ -276,23 +301,21 @@ class StudioWindow(QMainWindow):
         self.help_dialog.show()
 
     def build_library(self):
-        frame = QFrame()
-        frame.setObjectName('Library')
-        frame.setFixedWidth(SIZES['rail'])
-        box = QVBoxLayout(frame)
+        frame = FavoritesScroll()
+        self.rail_content = QWidget()
+        box = QHBoxLayout(self.rail_content)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(0)
         self.room_list = RoomList(self.avatars)
+        self.room_list.scroll_area = frame
         self.room_list.remove_requested.connect(lambda room: self.set_favorite(room, False))
         self.room_list.reordered.connect(self.reorder_favorites)
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
-        box.addWidget(self.room_list, 1)
-        self.refresh_live_button = button('', self.refresh_favorite_status)
+        box.addWidget(self.room_list)
+        self.refresh_live_button = decorate(button('', self.refresh_favorite_status), 'reload', '刷新开播状态', 32)
         self.library_add = button('', lambda: self.open_search(self.active))
-        for widget, glyph, description in (
-                (self.refresh_live_button, 'reload', '刷新开播状态'),
-                (self.library_add, 'add', '添加直播间  Ctrl+K')):
+        for widget, glyph, description in ((self.library_add, 'add', '添加直播间  Ctrl+K'),):
             # Rail actions fill the rail, unlike compact toolbar icon buttons.
             widget.setProperty('railAction', True)
             widget.setFixedSize(SIZES['rail'], SIZES['rail_action'])
@@ -301,6 +324,7 @@ class StudioWindow(QMainWindow):
             widget.setToolTip(description)
             widget.setAccessibleName(description)
             box.addWidget(widget)
+        frame.setWidget(self.rail_content)
         return frame
 
     def build_chat_settings(self):
@@ -360,6 +384,8 @@ class StudioWindow(QMainWindow):
             if room['id'] == selected_id:
                 self.room_list.setCurrentItem(item)
         self.sync_sidebar_visible()
+        self.room_list.setFixedWidth(self.room_list.count() * SIZES['rail'])
+        self.rail_content.setFixedSize((self.room_list.count() + 1) * SIZES['rail'], SIZES['rail'])
         self.refresh_live_button.setEnabled(bool(self.favorites) and not getattr(self, 'favorite_poll_pending', False))
 
     def reorder_favorites(self, room_ids):
@@ -753,6 +779,7 @@ class StudioWindow(QMainWindow):
                           'chat_font': self.chat_font.value(), 'chat_follow': self.follow.isChecked(),
                           'chat_names': self.show_names.isChecked(),
                           'volume': self.master_volume.value(),
+                          'audio_balance': self.balance_button.isChecked(),
                           'slot_settings': {str(tile.index): {'volume': tile.volume.value(), 'muted': tile.muted,
                                             'quality': tile.quality.currentData(),
                                             'chat_visible': tile.chat_toggle.isChecked(),
@@ -806,6 +833,12 @@ def main(root, demo=False):
     window = StudioWindow(root, instance, demo)
     window.closed.connect(app.quit)
     window.show()
+    from .windows_identity import set_window_identity
+    try:
+        set_window_identity(int(window.winId()), root)
+    except OSError:
+        import logging
+        logging.exception('Could not register taskbar relaunch properties')
     result = app.exec()
     QThreadPool.globalInstance().waitForDone(15000)
     window.avatar_pool.waitForDone(15000)

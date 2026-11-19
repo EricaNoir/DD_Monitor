@@ -40,6 +40,10 @@ def icon_image(name, size=18, color=None, dpr=2):
     elif name == 'headphones':
         p.drawArc(QRectF(5,5,14,14),0,180*16)
         p.drawRoundedRect(QRectF(4,11,4,8),1.3,1.3); p.drawRoundedRect(QRectF(16,11,4,8),1.3,1.3)
+    elif name == 'balance':
+        line(4,12,20,12)
+        for x, top, bottom in ((5,8,16), (12,4,20), (19,7,17)):
+            line(x,top,x,bottom)
     elif name in ('expand','collapse'):
         for x,y,sx,sy in [(4,4,1,1),(20,4,-1,1),(4,20,1,-1),(20,20,-1,-1)]:
             if name == 'collapse': x,y,sx,sy=x+sx*5,y+sy*5,-sx,-sy

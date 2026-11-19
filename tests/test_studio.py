@@ -119,12 +119,12 @@ class UITests(unittest.TestCase):
         w = self.window
         self.assertEqual(w.layout_choice.height(), 32)
         self.assertEqual(w.controls_toggle.height(), 32)
-        self.assertEqual(w.library.mapTo(w.centralWidget(), QPoint()).x(), 0)
-        for action in (w.refresh_live_button, w.library_add):
-            self.assertEqual(action.width(), w.library.width())
-            self.assertEqual(action.height(), 36)
-            self.assertEqual(action.geometry().center().x(), w.library.rect().center().x())
-        self.assertEqual(w.refresh_live_button.geometry().bottom() + 1, w.library_add.y())
+        self.assertLess(w.library.mapToGlobal(QPoint()).y(), w.content.mapToGlobal(QPoint()).y())
+        self.assertEqual(w.library.height(), 42)
+        self.assertEqual(w.library_add.width(), 42)
+        self.assertEqual(w.library_add.height(), 42)
+        self.assertEqual(w.library_add.x(), w.room_list.width())
+        self.assertEqual(w.refresh_live_button.height(), 32)
         tile = w.tiles[0]
         self.assertEqual(tile.quality.height(), 28)
         self.assertEqual(tile.play_button.height(), 28)
@@ -476,6 +476,54 @@ class UITests(unittest.TestCase):
         self.assertFalse(tile.sc_overlay.isVisible())
         self.assertFalse(tile.sc_overlay.active)
 
+    def test_sc_overlay_realtime_missing_dates_and_long_text_still_show(self):
+        import time
+        now = time.time()
+        tile = self.window.tiles[0]
+        message = {'kind': 'sc', 'id': 'missing-date', 'text': '测试长留言' * 180,
+                   'name': '观众', 'price': '30'}
+        tile.receive_chat(None, message)
+        self.app.processEvents()
+        overlay = tile.sc_overlay
+        self.assertTrue(overlay.isVisible())
+        self.assertLessEqual(overlay.height(), tile.stack.height())
+        overlay.sync(now + 1000)
+        self.assertFalse(overlay.isVisible())
+        overlay.add_message(message, now + 1001)
+        self.assertFalse(overlay.active, 'duplicate must not resurrect an expired overlay')
+
+    def test_balance_preserves_manual_volume_mute_and_history(self):
+        w = self.window
+        tile = w.tiles[0]
+        tile.volume.setValue(27)
+        tile.set_muted(True)
+        tile.history.append({'text': 'existing chat'})
+        w.balance_button.click()
+        self.assertTrue(all(t.audio_balanced for t in w.tiles))
+        self.assertEqual(tile.volume.value(), 27)
+        self.assertTrue(tile.muted)
+        self.assertEqual(len(tile.history), 1)
+        w.balance_button.click()
+        self.assertFalse(any(t.audio_balanced for t in w.tiles))
+
+    def test_header_favorites_overflow_scroll_and_add_at_end(self):
+        w = self.window
+        w.rooms = {str(i): {'id': str(i), 'name': str(i)} for i in range(30)}
+        w.favorites = set(w.rooms)
+        w.refresh_library()
+        w.resize(1050, 650)
+        self.app.processEvents()
+        self.assertEqual(w.library_add.x(), 30 * 42)
+        self.assertGreater(w.library.horizontalScrollBar().maximum(), 0)
+        bar = w.library.horizontalScrollBar()
+        bar.setValue(bar.maximum())
+        self.app.processEvents()
+        self.assertLessEqual(w.library_add.mapTo(w.library.viewport(), QPoint(42, 0)).x(), w.library.viewport().width())
+        position = bar.value()
+        w.refresh_library()
+        self.app.processEvents()
+        self.assertEqual(bar.value(), position)
+
     def test_sc_overlay_hidden_window_still_expires_and_future_sc_waits(self):
         import time
         now = time.time()
@@ -547,7 +595,7 @@ class UITests(unittest.TestCase):
         self.assertTrue(b.chat_panel.isVisible())
         w.controls_toggle.click()
         self.assertTrue(w.library.isVisible())
-        self.assertLessEqual(w.library.width(), 56)
+        self.assertEqual(w.library.height(), 42)
         self.assertFalse(w.global_controls.isVisible())
         self.assertTrue(b.chat_panel.isVisible())
         self.assertFalse(a.controls.isVisible())
@@ -691,7 +739,7 @@ class UITests(unittest.TestCase):
         w.favorites = {'123'}
         w.tiles[1].room = room
         w.refresh_library()
-        self.assertEqual(w.library.width(), 42)
+        self.assertEqual(w.library.height(), 42)
         self.assertTrue(w.library_add.isVisible())
         self.assertFalse(hasattr(w, 'library_toggle'))
         self.assertFalse(hasattr(w, 'splitter'))
@@ -704,7 +752,7 @@ class UITests(unittest.TestCase):
         again = StudioWindow(ROOT, demo=True, state_path=self.path)
         again.show()
         self.app.processEvents()
-        self.assertEqual(again.library.width(), 42)
+        self.assertEqual(again.library.height(), 42)
         again.close()
 
     def test_preview(self):

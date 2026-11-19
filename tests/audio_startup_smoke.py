@@ -56,6 +56,7 @@ with tempfile.TemporaryDirectory() as temp:
         for cycle in range(3):
             for tile in tiles:
                 tile.clear(emit=False)
+                tile.set_audio_balance(cycle % 2 == 0)
                 tile.room = {'id': str(tile.index + 1), 'name': 'Silent audio test'}
                 tile.got_stream(tile.generation, {'room': tile.room, 'url': str(path)})
             deadline = time.monotonic() + 5
@@ -75,6 +76,25 @@ with tempfile.TemporaryDirectory() as temp:
                 assert tile.player.audio_get_volume() == tile.volume.value()
                 assert tile.player.audio_get_mute() == int(tile.muted)
             print(f'PASS: cycle {cycle + 1}, 3 tiles restored independent volume/mute without overshoot', flush=True)
+        for enabled in (False, True):
+            tiles[0].paused = True
+            tiles[0].player.set_pause(True)
+            for tile in tiles:
+                tile.set_audio_balance(enabled)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and any(t._audio_pending for t in tiles):
+                app.processEvents()
+                for tile in tiles:
+                    level = tile.player.audio_get_volume()
+                    assert level <= tile.volume.value(), 'balance toggle exceeded saved volume'
+                    if tile.muted or tile.paused:
+                        assert level <= 0 or tile.player.audio_get_mute() == 1
+                time.sleep(.002)
+            assert all(not t._audio_pending for t in tiles)
+            assert str(tiles[0].player.get_state()).endswith('Paused')
+            assert tiles[1].player.audio_get_mute() == 1
+            assert [t.volume.value() for t in tiles] == [17, 42, 0]
+        print('PASS: balance toggles preserve pause, mute and individual volume with no overshoot', flush=True)
     finally:
         for tile in tiles:
             tile.shutdown()

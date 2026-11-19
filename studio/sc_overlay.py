@@ -1,6 +1,7 @@
 """Owned, input-transparent window: stays above VLC's native video surface."""
 import math
 import time
+from collections import deque
 from .theme import SIZES, FONTS
 from PySide6.QtCore import Qt, QTimer, QEvent, QPoint, QRect
 from PySide6.QtGui import QFont, QFontMetrics
@@ -25,12 +26,15 @@ def sc_interval(message):
 
 def display_interval(message, now):
     interval = sc_interval(message)
-    if not interval or interval[1] <= now:
-        return None
-    start, end = interval
     # Allow roughly five characters per second, plus time to notice the card.
     characters = sum(not char.isspace() for char in str(message.get('text', '')))
     reading_time = max(6, 2 + math.ceil(characters / 5))
+    if not interval or interval[1] <= now:
+        # A newly received socket event still deserves reading time even if
+        # its timestamps are missing/delayed or the local clock is ahead.
+        # Restored history, however, must never resurrect expired messages.
+        return None if message.get('historical') else (now, now + reading_time)
+    start, end = interval
     visible_start = max(now, start)
     return visible_start, visible_start + max((end - start) / 10, reading_time)
 
@@ -40,6 +44,8 @@ class SCOverlay(QFrame):
         super().__init__(host, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus
                          | Qt.WindowTransparentForInput)
         self.host = host
+        self.seen = set()
+        self.seen_order = deque()
         self.active = {}
         self.cards = []
         self.signature = None
@@ -78,8 +84,12 @@ class SCOverlay(QFrame):
         now = time.time() if now is None else now
         sid = str(message.get('id') or '')
         interval = display_interval(message, now)
-        if not sid or not interval or interval[1] <= now or sid in self.active:
+        if not sid or not interval or interval[1] <= now or sid in self.seen:
             return
+        self.seen.add(sid)
+        self.seen_order.append(sid)
+        if len(self.seen_order) > 2000:
+            self.seen.discard(self.seen_order.popleft())
         self.active[sid] = (dict(message), interval)
         self.watch(True)
         if len(self.active) > 200:
@@ -94,6 +104,8 @@ class SCOverlay(QFrame):
 
     def clear(self):
         self.active.clear()
+        self.seen.clear()
+        self.seen_order.clear()
         self.timer.stop()
         self.watch(False)
         self.signature = None
@@ -121,14 +133,18 @@ class SCOverlay(QFrame):
         font = QFont(self.font())
         font.setPixelSize(FONTS['caption'])
         metrics = QFontMetrics(font)
-        heights = {sid: max(SIZES['sc_overlay_height'], metrics.height() + 12 +
+        available = self.host.height() - 2 * inset - 20
+        if available < SIZES['sc_overlay_height']:
+            self.hide()
+            return
+        heights = {sid: min(available, max(SIZES['sc_overlay_height'], metrics.height() + 12 +
                            metrics.boundingRect(QRect(0, 0, width - 14, 10000), Qt.TextWordWrap,
-                                                str(item[0].get('text', ''))).height())
+                                                str(item[0].get('text', ''))).height()))
                    for sid, item in current}
         visible, used = [], 0
         for entry in reversed(current[-3:]):
             height = heights[entry[0]]
-            if used + height + gap > self.host.height() - 2 * inset - 20:
+            if used + height > available:
                 break
             visible.insert(0, entry)
             used += height + gap
@@ -159,7 +175,21 @@ class SCOverlay(QFrame):
                 title = f'SC ¥{message.get("price", "")} {message.get("name", "观众")}'
                 heading.setText(metrics.elidedText(title, Qt.ElideRight, width - 14))
                 layout.addWidget(heading)
-                body = QLabel(message.get('text', ''))
+                text = str(message.get('text', ''))
+                body_height = heights[sid] - metrics.height() - 12
+                # Keep at least one card visible in short tiles, with the full
+                # message still available in chat instead of hiding the overlay.
+                if metrics.boundingRect(QRect(0, 0, width - 14, 10000), Qt.TextWordWrap, text).height() > body_height:
+                    low, high = 0, len(text)
+                    while low < high:
+                        middle = (low + high + 1) // 2
+                        height = metrics.boundingRect(QRect(0, 0, width - 14, 10000), Qt.TextWordWrap, text[:middle] + '…').height()
+                        if height <= body_height:
+                            low = middle
+                        else:
+                            high = middle - 1
+                    text = text[:low] + '…'
+                body = QLabel(text)
                 body.setFont(font)
                 body.setMinimumWidth(0)
                 body.setTextFormat(Qt.PlainText)
@@ -174,7 +204,14 @@ class SCOverlay(QFrame):
             self.setFixedHeight(used - gap + (16 + gap if more else 0))
         self.move(self.host.mapToGlobal(QPoint(inset, inset)))
         if not self.isVisible():
+            self.winId()
+            if self.windowHandle() and window.windowHandle():
+                self.windowHandle().setTransientParent(window.windowHandle())
             self.show()
+        # VLC uses a native child surface; reaffirm the owned tool window's
+        # position after a stream/surface is recreated, without taking focus.
+        if window.isActiveWindow():
+            self.raise_()
 
     def shutdown(self):
         self.clear()

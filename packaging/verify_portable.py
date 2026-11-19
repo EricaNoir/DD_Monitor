@@ -34,8 +34,10 @@ with tempfile.TemporaryDirectory() as temp:
     window = StudioWindow(ROOT, demo=True, state_path=Path(temp) / 'studio.json')
     window.show()
     app.processEvents()
-    assert window.library.width() == 42
-    assert window.refresh_live_button.width() == 42
+    assert window.library.height() == 42
+    assert window.library_add.width() == 42
+    assert window.refresh_live_button.width() == 32
+    assert (ROOT / 'DD Monitor Studio.exe').is_file()
     assert not window.cookies
     window.close()
     sound_path = Path(temp) / 'silence.wav'
@@ -60,4 +62,6 @@ with tempfile.TemporaryDirectory() as temp:
     player.release()
     instance.release()
 assert not (ROOT / 'user-data').exists(), 'Self-check created private data in package'
+import runpy
+runpy.run_path(str(ROOT / 'tests/audio_balance_smoke.py'))['verify_balance'](ROOT)
 print('PASS: clean account, bundled imports, Qt UI, Windows TLS initialization and VLC decode')

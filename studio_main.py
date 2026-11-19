@@ -3,6 +3,8 @@ import sys
 import logging
 from studio.runtime import isolate_process
 isolate_process(Path(__file__).resolve().parent)
+from studio.windows_identity import set_process_identity
+set_process_identity()
 from studio.app import main
 
 if __name__ == '__main__':

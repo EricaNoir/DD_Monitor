@@ -1,10 +1,12 @@
-Windows 10/11 x64 便携版：下载 `DD-Monitor-Studio-…-windows-x64.zip`，完整解压后双击 **启动 DD Monitor.cmd**。
+Windows 10/11 x64 便携版：下载 `DD-Monitor-Studio-…-windows-x64.zip`，完整解压后双击 **DD Monitor Studio.exe**。
+
+本次更新：全新多屏图标与原生启动器；顶部横向收藏区，末尾添加、窄窗口滚动；独立动态压缩的「音量平衡」开关；修复 SC 浮层在短窗口、缺失时间字段和视频表面重建时消失的问题。旧的 Python 任务栏固定项需要取消，再固定新版图标一次。
 
 不需要 Git、Python、VLC 或管理员权限。首次启动没有账号和收藏，请使用自己的 B 站账号扫码登录。
 
 本包由 GitHub Actions 在干净的 Windows 环境中，从对应提交的白名单源码构建。未打包开发者的虚拟环境、登录信息、收藏、日志或本机配置；运行时来自 Python / VideoLAN 官方，PyPI 依赖固定版本和 SHA256。构建执行离线测试、依赖漏洞检查，以及解压后的 Qt 和 VLC 启动验证。
 
-附带 ZIP 的 SHA256 和 GitHub 构建来源证明（artifact attestation），可用于核对下载是否被更改及其构建来源。来源证明与校验值不等于绝对安全保证。应用启动脚本未做商业代码签名；遇到安全软件拦截时请核对来源，不要关闭防护。
+附带 ZIP 的 SHA256 和 GitHub 构建来源证明（artifact attestation），可用于核对下载是否被更改及其构建来源。来源证明与校验值不等于绝对安全保证。应用启动器未做商业代码签名；遇到安全软件拦截时请核对来源，不要关闭防护。
 
 使用后，个人数据只在本目录 `user-data` 内。分享给其他人请转发此 Release 页面或原始 ZIP，不要分享用过的整个文件夹。
 

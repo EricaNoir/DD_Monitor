@@ -408,6 +408,7 @@ class ChatWorker(QThread):
                 if float(data.get('end_time') or 0) > time.time() and not self.stop_requested.is_set():
                     message = parse_activity({'cmd': 'SUPER_CHAT_MESSAGE', 'data': data})
                     if message:
+                        message['historical'] = True
                         self.message.emit(message)
         except (ValueError, TypeError, KeyError, AttributeError, OSError, asyncio.TimeoutError):
             pass  # A failed preload must not interrupt the live socket.

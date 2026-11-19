@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QObject, Signal, QUrl, QSize, QRectF, QMimeData, QEvent, QTimer
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPixmap, QDrag, QPen
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PySide6.QtWidgets import QApplication, QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip, QMenu
+from PySide6.QtWidgets import QApplication, QListWidget, QStyledItemDelegate, QStyle, QAbstractItemView, QToolTip, QMenu, QScrollArea, QFrame
 from .icons import icon, paint_icon
 from .runtime import configure_qt_tls
 from .services import safe_image
@@ -114,6 +114,27 @@ class RoomDelegate(QStyledItemDelegate):
         return QSize(SIZES['rail'], SIZES['rail'])
 
 
+class FavoritesScroll(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.setFrameShape(QFrame.NoFrame)
+        self.setWidgetResizable(False)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFixedHeight(SIZES['rail'])
+        self.setMinimumWidth(2 * SIZES['rail'])
+        self.setToolTip('收藏直播间，可用滚轮横向滚动')
+
+    def wheelEvent(self, event):
+        delta = event.pixelDelta().x() or event.pixelDelta().y()
+        if not delta:
+            delta = (event.angleDelta().x() or event.angleDelta().y()) / 2
+        bar = self.horizontalScrollBar()
+        bar.setValue(bar.value() - int(delta))
+        event.accept()
+
+
 class RoomList(QListWidget):
     remove_requested = Signal(dict)
     reordered = Signal(list)
@@ -140,7 +161,11 @@ class RoomList(QListWidget):
         self.setAutoScroll(True)
         self.setMouseTracking(True)
         self.setSpacing(0)
-        self.setMinimumWidth(38)
+        self.setMinimumWidth(0)
+        self.setFixedHeight(SIZES['rail'])
+        self.setFlow(QListWidget.LeftToRight)
+        self.setWrapping(False)
+        self.setGridSize(QSize(SIZES['rail'], SIZES['rail']))
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
@@ -228,7 +253,7 @@ class RoomList(QListWidget):
         if item is None:
             return self.count()
         rect = self.visualItemRect(item)
-        return self.row(item) + int(point.y() > rect.center().y())
+        return self.row(item) + int(point.x() > rect.center().x())
 
     def dragMoveEvent(self, event):
         if not self.internal_drop(event):
@@ -241,19 +266,30 @@ class RoomList(QListWidget):
 
     def update_drop_indicator(self):
         index = self.insertion_index(self.drop_point)
-        self.drop_y = (self.visualItemRect(self.item(index)).top() if index < self.count()
-                       else self.visualItemRect(self.item(self.count() - 1)).bottom()) if self.count() else 0
+        self.drop_y = (self.visualItemRect(self.item(index)).left() if index < self.count()
+                       else self.visualItemRect(self.item(self.count() - 1)).right()) if self.count() else 0
         self.viewport().update()
 
     def scroll_drag(self):
         if self.drop_point is None:
             return
-        y = self.drop_point.y()
-        delta = -12 if y < 20 else (12 if y > self.viewport().height() - 20 else 0)
+        scroll = getattr(self, 'scroll_area', None)
+        if scroll is None:
+            return
+        point = self.viewport().mapTo(scroll.viewport(), self.drop_point)
+        delta = -12 if point.x() < 20 else (12 if point.x() > scroll.viewport().width() - 20 else 0)
         if delta:
-            bar = self.verticalScrollBar()
+            bar = scroll.horizontalScrollBar()
+            previous = bar.value()
             bar.setValue(bar.value() + delta)
+            self.drop_point.setX(self.drop_point.x() + bar.value() - previous)
             self.update_drop_indicator()
+
+    def wheelEvent(self, event):
+        if getattr(self, 'scroll_area', None) is not None:
+            self.scroll_area.wheelEvent(event)
+        else:
+            super().wheelEvent(event)
 
     def dragLeaveEvent(self, event):
         self.drop_y = None
@@ -289,7 +325,7 @@ class RoomList(QListWidget):
         if self.drop_y is not None:
             painter = QPainter(self.viewport())
             painter.setPen(QPen(QColor(COLORS['icon']), 2))
-            painter.drawLine(6, self.drop_y, self.viewport().width() - 6, self.drop_y)
+            painter.drawLine(self.drop_y, 6, self.drop_y, self.viewport().height() - 6)
             painter.end()
 
 

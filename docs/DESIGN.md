@@ -27,9 +27,24 @@ through `studio.theme.stylesheet()`, including in preview and test scripts.
   Explicit document block formats keep incoming messages and rebuilt history
   identical. Draw the rounded background behind selectable text; Qt rich text
   does not implement CSS `border-radius`.
-- The fixed 42 px avatar rail starts at the left content edge, with centered
-  26 px avatars in square cells. No sidebar splitter or collapse control.
-  The header starts with verified account status. Keep video/chat splitters.
+- Favorites occupy a horizontal 42 px high strip in the header, following
+  verified account status, with centered 26 px avatars in square cells.
+  The add button follows the last avatar. Wheel input and drag-edge scrolling
+  reveal overflow; live-first grouping and manual ordering remain intact.
+  No left sidebar, splitter or collapse control. Keep video/chat splitters.
+- The editable app icon is `assets/studio-icon.svg`; `scripts/build_icon.py`
+  exports PNG and the 16–256 px Windows ICO. `scripts/build_launcher.py` embeds
+  it in the native launcher; window and shortcut AppIDs match for taskbar pins.
+- The global loudness-balance toggle enables VLC's compressor per player.
+  `audio_balance.py` bridges the bundled VLC 3 typed variable API because the
+  LibVLC media-player filter variable does not inherit CLI/media filter options.
+  Native sample capture tests validate actual gain and reversible disabling;
+  existing silence-based startup tests cover pause, mute and volume safety.
+  Unsupported runtimes fall back to original audio, not a startup failure.
+- Live SC without usable timestamps still receives minimum reading time;
+  expired restored history is rejected. An oversized card fits the tile with
+  an ellipsis and remains complete in chat. Owned native windows remain above
+  the video's child HWND without stealing focus or being globally topmost.
 
 Use the offscreen UI tests to verify real widget geometry and render examples.
 These previews contain sample messages, not paid test messages.

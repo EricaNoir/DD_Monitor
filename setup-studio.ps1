@@ -23,4 +23,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $runtimeDir 'vlc-3.0.21\libvlc.dll')
     & tar -xf $archive -C $runtimeDir
     if ($LASTEXITCODE -ne 0) { throw 'VLC extraction failed.' }
 }
-Write-Output 'Ready. Double-click run-studio.cmd to launch.'
+& .\.venv\Scripts\python.exe scripts/build_launcher.py
+if ($LASTEXITCODE -ne 0) { throw 'Native launcher compilation failed.' }
+Write-Output 'Ready. Double-click DD Monitor Studio.exe to launch.'

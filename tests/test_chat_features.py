@@ -79,7 +79,9 @@ class ChatSendTests(unittest.TestCase):
         self.assertEqual(display_interval(dict(message, end_time=160, text='字' * 100), 100), (100, 122))
         self.assertEqual(display_interval(dict(message, end_time=160), 159), (159, 165))
         self.assertEqual(display_interval(message, 90), (100, 130))
-        self.assertIsNone(display_interval(message, 400))
+        self.assertEqual(display_interval(message, 400), (400, 406))
+        self.assertEqual(display_interval({'text': '实时 SC'}, 400), (400, 406))
+        self.assertIsNone(display_interval(dict(message, historical=True), 400))
 
     def test_chat_worker_retries_fatal_exit_and_stops_without_waiting(self):
         worker = ChatWorker(123, {})
