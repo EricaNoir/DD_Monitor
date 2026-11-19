@@ -498,7 +498,7 @@ class UITests(unittest.TestCase):
         tile.volume.setValue(27)
         tile.set_muted(True)
         tile.history.append({'text': 'existing chat'})
-        w.balance_button.click()
+        self.assertTrue(w.balance_button.isChecked())
         self.assertTrue(all(t.audio_balanced for t in w.tiles))
         self.assertEqual(tile.volume.value(), 27)
         self.assertTrue(tile.muted)

@@ -187,7 +187,7 @@ class StudioWindow(QMainWindow):
             tile.room_resolved.connect(self.update_room)
             tile.changed.connect(self.tile_changed)
             try:
-                tile.set_audio_balance(bool(self.state.get('audio_balance', False)))
+                tile.set_audio_balance(bool(self.state.get('audio_balance', True)))
             except (OSError, AttributeError, KeyError, RuntimeError):
                 import logging
                 logging.exception('Audio balance unavailable; continuing with original audio')
@@ -209,19 +209,18 @@ class StudioWindow(QMainWindow):
         outer.addWidget(self.content, 1)
 
         self.global_controls = QFrame()
-        self.global_controls.setFixedWidth(243)
+        self.global_controls.setFixedWidth(208)
         footer = QHBoxLayout(self.global_controls)
         footer.setContentsMargins(0, 0, 8, 0)
         footer.setSpacing(3)
         self.pause_all = decorate(button('', self.toggle_all_pause, checkable=True), 'pause', '全部暂停', 32)
         footer.addWidget(self.pause_all)
-        self.reload_button = decorate(button('', self.reload_all), 'reload', '全部重连', 32)
-        footer.addWidget(self.reload_button)
+        self.reload_button = self.refresh_live_button
         self.mute_all = decorate(button('', self.toggle_all_mute, checkable=True), 'volume', '全部静音', 32)
         footer.addWidget(self.mute_all)
         self.balance_button = decorate(button('', checkable=True), 'balance',
             '音量平衡：降低过响、适度提升较轻的声音；切换时画面会短暂重连', 32)
-        self.balance_button.setChecked(bool(self.state.get('audio_balance', False)))
+        self.balance_button.setChecked(bool(self.state.get('audio_balance', True)))
         self.balance_button.toggled.connect(self.toggle_audio_balance)
         footer.addWidget(self.balance_button)
         self.master_volume = QSlider(Qt.Horizontal)
@@ -313,7 +312,7 @@ class StudioWindow(QMainWindow):
         self.room_list.itemClicked.connect(self.activate_library)
         self.room_list.itemActivated.connect(self.activate_library)
         box.addWidget(self.room_list)
-        self.refresh_live_button = decorate(button('', self.refresh_favorite_status), 'reload', '刷新开播状态', 32)
+        self.refresh_live_button = decorate(button('', self.refresh_all), 'reload', '刷新开播状态并重连所有画面', 32)
         self.library_add = button('', lambda: self.open_search(self.active))
         for widget, glyph, description in ((self.library_add, 'add', '添加直播间  Ctrl+K'),):
             # Rail actions fill the rail, unlike compact toolbar icon buttons.
@@ -386,7 +385,7 @@ class StudioWindow(QMainWindow):
         self.sync_sidebar_visible()
         self.room_list.setFixedWidth(self.room_list.count() * SIZES['rail'])
         self.rail_content.setFixedSize((self.room_list.count() + 1) * SIZES['rail'], SIZES['rail'])
-        self.refresh_live_button.setEnabled(bool(self.favorites) and not getattr(self, 'favorite_poll_pending', False))
+        self.refresh_live_button.setEnabled(not getattr(self, 'favorite_poll_pending', False))
 
     def reorder_favorites(self, room_ids):
         self.favorite_order = list(dict.fromkeys(rid for rid in room_ids if rid in self.favorites))
@@ -632,6 +631,10 @@ class StudioWindow(QMainWindow):
         self.mute_all.blockSignals(False)
         self.select_tile(index)
 
+    def refresh_all(self):
+        self.refresh_favorite_status()
+        self.reload_all()
+
     def reload_all(self):
         for tile in self.tiles:
             if not tile.suspended:
@@ -689,7 +692,7 @@ class StudioWindow(QMainWindow):
 
     def favorite_status_failed(self, error):
         self.favorite_poll_pending = False
-        self.refresh_live_button.setEnabled(bool(self.favorites))
+        self.refresh_live_button.setEnabled(True)
         self.refresh_live_button.setToolTip('刷新失败，点击重试\n' + error)
         # Keep last known states; a failed request does not mean offline.
 
@@ -697,7 +700,7 @@ class StudioWindow(QMainWindow):
         self.favorite_poll_pending = False
         if self.closing:
             return
-        self.refresh_live_button.setToolTip('刷新开播状态（上次刷新成功）')
+        self.refresh_live_button.setToolTip('刷新开播状态并重连所有画面（上次状态刷新成功）')
         visible_ids = {tile.room['id'] for tile in self.tiles[:self.count] if tile.room}
         for room in rooms:
             if room['id'] in self.rooms and (room['id'] in self.favorites or room['id'] in visible_ids):

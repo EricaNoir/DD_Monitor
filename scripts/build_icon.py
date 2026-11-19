@@ -1,6 +1,7 @@
 """Render the editable vector master to Windows multi-resolution icon assets."""
 from pathlib import Path
 import io
+import shutil
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice, Qt
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
@@ -21,3 +22,4 @@ buffer.open(QIODevice.WriteOnly)
 canvas.save(buffer, 'PNG')
 image = Image.open(io.BytesIO(bytes(data)))
 image.save(ROOT / 'favicon.ico', sizes=[(s, s) for s in (16, 20, 24, 32, 40, 48, 64, 128, 256)])
+shutil.copyfile(ROOT / 'favicon.ico', ROOT / 'assets/studio-app.ico')

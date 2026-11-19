@@ -5,7 +5,7 @@ from pathlib import Path
 def load_state(path):
     default = {'rooms': [], 'slots': [None] * 4, 'layout': 4, 'chat_visible': True,
                'controls_visible': True, 'chat_font': 13,
-               'chat_follow': True, 'volume': 35, 'slot_settings': {}}
+               'chat_follow': True, 'volume': 35, 'audio_balance': True, 'slot_settings': {}}
     try:
         default.update(json.loads(Path(path).read_text(encoding='utf-8')))
     except (OSError, ValueError):
