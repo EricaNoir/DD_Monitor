@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 
 
@@ -16,9 +17,20 @@ def load_state(path):
 def save_json(path, state):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix('.tmp')
-    temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
-    temp.replace(path)
+    payload = json.dumps(state, ensure_ascii=False, indent=2)
+    temp = None
+    try:
+        # Separate writers must never truncate or rename one another's temp file.
+        # Close it before replace: Windows does not rename an open NamedTemporaryFile.
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                         dir=path.parent, prefix=path.name + '.',
+                                         suffix='.tmp', delete=False) as stream:
+            temp = Path(stream.name)
+            stream.write(payload)
+        temp.replace(path)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 def load_credentials(root):

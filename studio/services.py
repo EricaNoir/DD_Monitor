@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import requests
 from .gift_proto import decode_gift
 from .room_metrics import live_start, audience_update
-from PySide6.QtCore import QObject, QRunnable, QThread, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThread, Qt, Signal, Slot
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
            'Referer': 'https://live.bilibili.com/'}
@@ -258,24 +258,57 @@ class BiliAPI:
 class JobSignals(QObject):
     done = Signal(object)
     error = Signal(str)
+    completed = Signal(bool, object)
+
+    def __init__(self, owner=None):
+        # A runnable is auto-deleted on a pool thread. Keep its dispatcher alive
+        # independently until the GUI has consumed the result, even if the
+        # requesting widget is destroyed while the network call is in flight.
+        app = QCoreApplication.instance()
+        if app is None or QThread.currentThread() != app.thread():
+            raise RuntimeError('Create UI jobs on the application thread')
+        super().__init__(app)
+        self.active = True
+        self.completed.connect(self.deliver, Qt.QueuedConnection)
+        if owner is not None:
+            owner.destroyed.connect(self.cancel)
+
+    @Slot()
+    def cancel(self):
+        self.active = False
+
+    @Slot(bool, object)
+    def deliver(self, success, result):
+        try:
+            if self.active:
+                if success:
+                    self.done.emit(result)
+                else:
+                    self.error.emit(result)
+        finally:
+            self.deleteLater()
 
 
 class Job(QRunnable):
-    def __init__(self, work):
+    def __init__(self, work, owner=None):
         super().__init__()
         self.work = work
-        self.signals = JobSignals()
+        self.signals = JobSignals(owner)
 
     @Slot()
     def run(self):
         try:
-            self.signals.done.emit(self.work())
+            result = self.work()
         except requests.Timeout:
-            self.signals.error.emit('连接超时，请重试。')
+            success, result = False, '连接超时，请重试。'
         except requests.RequestException:
-            self.signals.error.emit('网络连接失败，请检查网络后重试。')
+            success, result = False, '网络连接失败，请检查网络后重试。'
         except Exception as error:
-            self.signals.error.emit(str(error) if isinstance(error, ValueError) else '数据暂时不可用，请重试。')
+            success = False
+            result = str(error) if isinstance(error, ValueError) else '数据暂时不可用，请重试。'
+        else:
+            success = True
+        self.signals.completed.emit(success, result)
 
 
 def parse_chat(command):

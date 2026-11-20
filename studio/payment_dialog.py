@@ -160,7 +160,7 @@ class PaymentDialog(QDialog):
             self.reload()
 
     def run_job(self, work, done, error=None):
-        job = Job(work)
+        job = Job(work, owner=self)
         job.signals.done.connect(done)
         job.signals.error.connect(error or self.failed)
         QThreadPool.globalInstance().start(job)

@@ -250,7 +250,7 @@ class SearchDialog(QDialog):
                             ('正在加载关注列表…' if self.mode == 'following' else f'正在搜索「{query}」…'))
         self.search_button.setEnabled(False)
         api, mode = BiliAPI(self.cookies), self.mode
-        job = Job(lambda: api.followings(query, page) if mode == 'following' else api.search_with_follow(query, page))
+        job = Job(lambda: api.followings(query, page) if mode == 'following' else api.search_with_follow(query, page), owner=self)
         job.signals.done.connect(lambda data: self.show_results(ticket, dict(data, page=page)))
         job.signals.error.connect(lambda error: self.show_error(ticket, error))
         QThreadPool.globalInstance().start(job)
@@ -336,5 +336,12 @@ class SearchDialog(QDialog):
     def add_selected(self):
         rooms = self.selected_rooms()
         if rooms:
-            self.rooms_added.emit(rooms, self.target.currentData())
+            target = self.target.currentData()
+            parent = self.parent()
+            if target >= 0 and hasattr(parent, 'room_add_targets'):
+                capacity = len(parent.room_add_targets(target))
+                if len(rooms) > capacity:
+                    self.status.setText(f'当前最多可添加 {capacity} 个直播间，请减少选择或选择“仅收藏到侧栏”。')
+                    return
+            self.rooms_added.emit(rooms, target)
             self.accept()

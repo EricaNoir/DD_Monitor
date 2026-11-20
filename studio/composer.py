@@ -46,7 +46,7 @@ class ChatComposer(QWidget):
         self.button.setToolTip(text or '发送弹幕 · Enter')
 
     def run_job(self, work, done, failed):
-        job = Job(work)
+        job = Job(work, owner=self)
         job.signals.done.connect(done)
         job.signals.error.connect(failed)
         QThreadPool.globalInstance().start(job)

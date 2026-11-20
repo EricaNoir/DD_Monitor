@@ -544,14 +544,9 @@ class PlayerTile(QFrame):
         self.empty_hint.setText('正在连接直播间…')
         api = BiliAPI(self.cookies)
         rid, quality = self.room['id'], self.quality.currentData()
-        task = Job(lambda: api.stream(rid, quality))
-        # Keep the signal object alive until its queued GUI callbacks finish,
-        # even after QThreadPool auto-deletes the short-lived runnable.
-        task.signals.setParent(self)
+        task = Job(lambda: api.stream(rid, quality), owner=self)
         task.signals.done.connect(lambda result: self.got_stream(ticket, result))
         task.signals.error.connect(lambda error: self.failed(ticket, error))
-        task.signals.done.connect(task.signals.deleteLater)
-        task.signals.error.connect(task.signals.deleteLater)
         QThreadPool.globalInstance().start(task)
 
     def got_stream(self, ticket, result):

@@ -1,6 +1,7 @@
 from .theme import stylesheet, SIZES
 import io
 import json
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal, QSize, QPoint, QByteArray
@@ -59,7 +60,7 @@ class LoginDialog(QDialog):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.finished.connect(self.finish)
-        job = Job(self.api.qr)
+        job = Job(self.api.qr, owner=self)
         job.signals.done.connect(self.show_qr)
         job.signals.error.connect(self.status.setText)
         QThreadPool.globalInstance().start(job)
@@ -80,7 +81,7 @@ class LoginDialog(QDialog):
         if self.polling or not self.key:
             return
         self.polling = True
-        job = Job(lambda: self.api.poll_qr(self.key))
+        job = Job(lambda: self.api.poll_qr(self.key), owner=self)
         job.signals.done.connect(self.poll_result)
         job.signals.error.connect(self.poll_error)
         QThreadPool.globalInstance().start(job)
@@ -423,7 +424,7 @@ class StudioWindow(QMainWindow):
                 continue
             self.avatar_metadata_pending.add(rid)
             api = BiliAPI(self.cookies)
-            job = Job(lambda r=rid, a=api: a.room(r))
+            job = Job(lambda r=rid, a=api: a.room(r), owner=self)
             job.signals.done.connect(lambda data, r=rid: self.avatar_metadata_ready(r, data))
             self.avatar_pool.start(job)
 
@@ -471,13 +472,25 @@ class StudioWindow(QMainWindow):
         dialog.show()
         dialog.input.setFocus()
 
+    def room_add_targets(self, target):
+        if not 0 <= target < self.count or self.tiles[target].composer.sending:
+            return []
+        # An explicit destination replaces that slot, including an offline room.
+        # Additional selections use empty slots without evicting unrelated rooms.
+        return [target] + [i for i in range(self.count)
+                           if i != target and not self.tiles[i].room
+                           and not self.tiles[i].composer.sending]
+
     def add_rooms(self, rooms, target):
+        targets = self.room_add_targets(target) if target >= 0 else []
+        if target >= 0 and len(rooms) > len(targets):
+            self.notice.setText(f'当前最多可添加 {len(targets)} 个直播间，请减少选择或仅收藏到侧栏。')
+            return
         for room in rooms:
             self.rooms[room['id']] = room
             if target == -1:
                 self.favorites.add(room['id'])
         if target >= 0:
-            targets = ([target] if not self.tiles[target].room else []) + [i for i in range(self.count) if i != target and not self.tiles[i].room]
             for room, index in zip(rooms, targets):
                 self.tiles[index].set_room(room)
         self.refresh_library()
@@ -672,7 +685,7 @@ class StudioWindow(QMainWindow):
             return
         self.account.setText('正在检查登录…')
         api = BiliAPI(self.cookies)
-        job = Job(lambda: api.get('https://api.bilibili.com/x/web-interface/nav'))
+        job = Job(lambda: api.get('https://api.bilibili.com/x/web-interface/nav'), owner=self)
         job.signals.done.connect(lambda data: self.account_status_ready(ticket, data))
         job.signals.error.connect(lambda error: self.account_status_failed(ticket, error))
         QThreadPool.globalInstance().start(job)
@@ -710,12 +723,9 @@ class StudioWindow(QMainWindow):
         self.refresh_live_button.setEnabled(False)
         self.refresh_live_button.setToolTip('正在刷新开播状态…')
         api = BiliAPI(self.cookies)
-        job = Job(lambda: api.room_statuses(rooms))
-        job.signals.setParent(self)
+        job = Job(lambda: api.room_statuses(rooms), owner=self)
         job.signals.done.connect(self.favorite_status_ready)
         job.signals.error.connect(self.favorite_status_failed)
-        job.signals.done.connect(job.signals.deleteLater)
-        job.signals.error.connect(job.signals.deleteLater)
         QThreadPool.globalInstance().start(job)
 
     def favorite_status_failed(self, error):
@@ -821,7 +831,21 @@ class StudioWindow(QMainWindow):
                                             'chat_visible': tile.chat_toggle.isChecked(),
                                             'chat_width': tile.chat_width,
                                             'chat_filter': tile.chat_tabs.currentIndex()} for tile in self.tiles}})
-        save_json(self.state_path, self.state)
+        try:
+            save_json(self.state_path, self.state)
+        except OSError:
+            # A disk error must not interrupt player shutdown or destroy the last
+            # successfully saved configuration. Keep the current state in memory.
+            logging.exception('Could not save Studio settings')
+            self.statusBar().show()
+            self.statusBar().showMessage('设置保存失败：请检查数据目录是否可写。上次保存的数据仍保留。')
+            self._save_failed = True
+            return False
+        if getattr(self, '_save_failed', False):
+            self.statusBar().clearMessage()
+            self.statusBar().hide()
+            self._save_failed = False
+        return True
 
     def closeEvent(self, event):
         if any(tile.composer.sending for tile in self.tiles):
