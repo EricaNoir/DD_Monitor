@@ -26,13 +26,13 @@ def message_html(message, names=True):
     for token, url in sorted(message.get('images', {}).items(), key=lambda pair: -len(pair[0])):
         url = safe_image(url)
         if url:
-            text = text.replace(html.escape(token), f'<img width="24" height="24" src="{html.escape(url, quote=True)}">')
+            text = text.replace(html.escape(token), f'<img width="24" height="24" style="vertical-align:middle;" src="{html.escape(url, quote=True)}">')
     emoji = safe_image(message.get('emoji', ''))
     if emoji:
-        text = f'<img width="48" height="48" alt="{text}" src="{html.escape(emoji, quote=True)}">'
+        text = f'<img width="48" height="48" style="vertical-align:middle;" alt="{text}" src="{html.escape(emoji, quote=True)}">'
     medal = ''
     if names and message.get('medal'):
-        medal = f'<span style="color:{COLORS["medal"]};font-style:italic;">{html.escape(message["medal"])} {html.escape(message.get("level", ""))}</span>&nbsp;&nbsp;'
+        medal = f'<span style="color:{COLORS["medal"]};font-style:normal;">{html.escape(message["medal"])} {html.escape(message.get("level", ""))}</span>&nbsp;&nbsp;'
     sender = f'<span style="color:{COLORS["text_secondary"]};">{name}</span><span style="color:{COLORS["focus"]};">：</span>' if names else ''
     return f'<p style="margin:6px 0;line-height:140%;">{medal}{sender}<span style="color:{COLORS["text"]};">{text}</span></p>'
 

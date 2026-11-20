@@ -561,10 +561,13 @@ class StudioWindow(QMainWindow):
         self.save()
 
     def arrange(self):
+        indices = [self.focused] if self.focused is not None else list(range(self.count))
         for tile in self.tiles:
             self.video_grid.removeWidget(tile)
-            tile.hide()
-        indices = [self.focused] if self.focused is not None else list(range(self.count))
+            # Keep the selected native video and its owned SC window mapped.
+            # Hiding every tile also hides SC until a later timer/show event.
+            if tile.index not in indices:
+                tile.hide()
         columns = 1 if len(indices) == 1 else (2 if len(indices) <= 4 else 3)
         for i in range(9):
             self.video_grid.setRowStretch(i, 0)
@@ -579,6 +582,12 @@ class StudioWindow(QMainWindow):
             tile.suspend(tile.index not in indices)
             tile.focus_button.setIcon(icon('collapse' if self.focused == tile.index else 'expand'))
             tile.focus_button.setToolTip('返回多屏' if self.focused == tile.index else '放大这个画面')
+        self.video_grid.activate()
+        for tile in self.tiles:
+            if tile.sc_overlay.active:
+                tile.sc_overlay.sync()
+                # Outer layouts may settle after the grid has been activated.
+                QTimer.singleShot(0, tile.sc_overlay.sync)
         self.sync_sidebar_visible()
 
     def swap_tiles(self, source, target):

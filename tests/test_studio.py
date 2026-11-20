@@ -84,9 +84,9 @@ class DataTests(unittest.TestCase):
             self.assertEqual(result['follow_state'], 'unavailable')
             self.assertTrue(all(r['following'] is None for r in rooms))
 
-    def test_medal_has_italic_color_without_background(self):
+    def test_medal_has_upright_color_without_background(self):
         markup = message_html({'name':'观众','text':'消息','medal':'粉丝牌','level':'21'})
-        self.assertIn('font-style:italic', markup)
+        self.assertIn('font-style:normal', markup)
         self.assertNotIn('background-color', markup)
         self.assertIn('粉丝牌 21</span>', markup)
 
