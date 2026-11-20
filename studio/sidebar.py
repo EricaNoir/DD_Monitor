@@ -390,7 +390,9 @@ class SearchResultDelegate(QStyledItemDelegate):
             return True
         if clicked or pressed:
             value=Qt.Unchecked if index.data(Qt.CheckStateRole) in (Qt.Checked, Qt.Checked.value) else Qt.Checked
-            return model.setData(index,value,Qt.CheckStateRole)
+            # QAbstractItemModel check roles must store an integer, not a Python enum.
+            # Otherwise the delegate paints a check but QListWidgetItem.checkState() reads Unchecked.
+            return model.setData(index,value.value,Qt.CheckStateRole)
         return False
 
     def helpEvent(self, event, view, option, index):
