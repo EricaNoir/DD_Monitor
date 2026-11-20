@@ -367,9 +367,16 @@ class SearchResultDelegate(QStyledItemDelegate):
         x=rect.left()+88
         width=max(10,rect.right()-x-48)
         painter.setPen(QColor(COLORS['text']))
-        title=room.get('name','') + (('  ·  直播中' if room.get('live') else '  ·  未开播') if room.get('id') else '')
-        painter.drawText(QRectF(x,rect.top()+10,width,24),Qt.AlignVCenter,
-                         option.fontMetrics.elidedText(title,Qt.ElideRight,width))
+        dot_size = SIZES['status_dot']
+        dot_gap = SIZES['gap']
+        title_width = max(1, width - dot_size - dot_gap) if room.get('id') else width
+        title = option.fontMetrics.elidedText(room.get('name', ''), Qt.ElideRight, title_width)
+        painter.drawText(QRectF(x,rect.top()+10,title_width,24),Qt.AlignVCenter,title)
+        if room.get('id'):
+            dot_x = x + option.fontMetrics.horizontalAdvance(title) + dot_gap
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(COLORS['live'] if room.get('live') else COLORS['offline']))
+            painter.drawEllipse(QRectF(dot_x, rect.top()+22-dot_size/2, dot_size, dot_size))
         status='已关注' if room.get('following') is True else ('未关注' if room.get('following') is False else '关注状态未知')
         subtitle=f'{status}  ·  {room.get("id", "")}  ·  {room.get("title", "")}' if room.get('id') else ('直播间信息暂不可用' if room.get('room_known') is False else '未开通直播间')
         painter.setPen(QColor(COLORS['text_muted']))

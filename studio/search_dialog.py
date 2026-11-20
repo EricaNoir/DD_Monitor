@@ -271,7 +271,8 @@ class SearchDialog(QDialog):
             item = QListWidgetItem(room['name'])
             item.setData(Qt.UserRole, dict(room))
             item.setData(Qt.UserRole + 1, room.get('id') in self.favorite_ids)
-            item.setToolTip(room['name'] + '\n' + room.get('title', ''))
+            live_status = (' · 直播中' if room.get('live') else ' · 未开播') if room.get('id') else ''
+            item.setToolTip(room['name'] + live_status + '\n' + room.get('title', ''))
             if room.get('id'):
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 selected = any(row.data(Qt.UserRole).get('id') == room['id'] and row.checkState() == Qt.Checked for row in self.items(self.favorite_strip))
